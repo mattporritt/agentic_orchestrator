@@ -59,4 +59,5 @@ def test_generate_review_bundle_can_use_mock_fallback(tmp_path: Path, monkeypatc
     assert "mock_fallback" in summary
     assert config_used["tools"][0]["tool"] == "agentic_devdocs"
     assert "summary" in routing_eval
+    assert "by_query_style" in routing_eval
     assert (bundle_dir / "mode_comparison.md").exists()

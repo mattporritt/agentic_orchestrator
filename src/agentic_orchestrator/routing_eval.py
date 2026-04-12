@@ -12,12 +12,14 @@ from agentic_orchestrator.routing import route_query
 
 
 DEFAULT_ROUTING_EVAL_PATH = Path(__file__).resolve().parents[2] / "evals" / "routing_eval_v1.json"
+ROUTING_STATUSES = ("CORRECT", "ACCEPTABLE", "OVERCALLED", "UNDERCALLED", "WRONG")
 
 
 @dataclass(frozen=True)
 class RoutingEvalCase:
     id: str
     query: str
+    query_style: str
     preferred_tools: list[str]
     acceptable_tool_sets: list[list[str]]
     disallowed_tools: list[str]
@@ -37,6 +39,7 @@ def load_routing_eval_cases(path: str | Path | None = None) -> list[RoutingEvalC
             RoutingEvalCase(
                 id=item["id"],
                 query=item["query"],
+                query_style=str(item.get("query_style", "general")),
                 preferred_tools=list(item.get("preferred_tools", [])),
                 acceptable_tool_sets=[list(group) for group in item.get("acceptable_tool_sets", [])],
                 disallowed_tools=list(item.get("disallowed_tools", [])),
@@ -80,7 +83,8 @@ def evaluate_auto_routing(
 
     loaded_cases = cases or load_routing_eval_cases()
     results: list[dict[str, Any]] = []
-    counts = {"CORRECT": 0, "ACCEPTABLE": 0, "OVERCALLED": 0, "UNDERCALLED": 0, "WRONG": 0}
+    counts = {status: 0 for status in ROUTING_STATUSES}
+    by_style: dict[str, dict[str, int]] = {}
 
     for case in loaded_cases:
         payload = service.query(query=case.query, context=case.context, route_mode="auto")
@@ -89,11 +93,15 @@ def evaluate_auto_routing(
         payload["results"][0]["diagnostics"]["routing_eval_status"] = grade["status"]
         payload["results"][0]["diagnostics"]["routing_eval_reason"] = grade["reason"]
         payload["results"][0]["diagnostics"]["routing_eval_case_id"] = case.id
+        payload["results"][0]["diagnostics"]["routing_eval_query_style"] = case.query_style
         counts[grade["status"]] += 1
+        style_counts = by_style.setdefault(case.query_style, {status: 0 for status in ROUTING_STATUSES})
+        style_counts[grade["status"]] += 1
         results.append(
             {
                 "case_id": case.id,
                 "query": case.query,
+                "query_style": case.query_style,
                 "preferred_tools": case.preferred_tools,
                 "acceptable_tool_sets": case.acceptable_tool_sets,
                 "disallowed_tools": case.disallowed_tools,
@@ -105,7 +113,7 @@ def evaluate_auto_routing(
             }
         )
 
-    return {"cases": results, "summary": counts}
+    return {"cases": results, "summary": counts, "by_query_style": by_style}
 
 
 def compare_modes_for_case(case: RoutingEvalCase) -> dict[str, Any]:
@@ -117,6 +125,7 @@ def compare_modes_for_case(case: RoutingEvalCase) -> dict[str, Any]:
     return {
         "case_id": case.id,
         "query": case.query,
+        "query_style": case.query_style,
         "task_tools": [item.tool_name for item in task_decision.tools],
         "auto_tools": [item.tool_name for item in auto_decision.tools],
         "manual_tools": [item.tool_name for item in manual_decision.tools],
@@ -129,12 +138,18 @@ def render_routing_eval_text(evaluation: dict[str, Any]) -> str:
     lines = ["Routing Eval", ""]
     summary = evaluation["summary"]
     lines.append(
-        "Summary: "
-        + ", ".join(f"{key.lower()}={summary[key]}" for key in ("CORRECT", "ACCEPTABLE", "OVERCALLED", "UNDERCALLED", "WRONG"))
+        "Summary: " + ", ".join(f"{key.lower()}={summary[key]}" for key in ROUTING_STATUSES)
     )
+    if evaluation.get("by_query_style"):
+        lines.append("")
+        lines.append("By query style:")
+        for style, counts in sorted(evaluation["by_query_style"].items()):
+            lines.append(
+                f"- {style}: " + ", ".join(f"{key.lower()}={counts[key]}" for key in ROUTING_STATUSES if counts[key] > 0)
+            )
     lines.append("")
     for case in evaluation["cases"]:
-        lines.append(f"- {case['case_id']}: {case['status']} -> {', '.join(case['selected_tools'])}")
+        lines.append(f"- {case['case_id']} [{case['query_style']}]: {case['status']} -> {', '.join(case['selected_tools'])}")
         lines.append(f"  preferred: {', '.join(case['preferred_tools'])}")
         if case["acceptable_tool_sets"]:
             acceptable = ["{" + ", ".join(group) + "}" for group in case["acceptable_tool_sets"]]

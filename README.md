@@ -163,14 +163,22 @@ agentic-orchestrator query "general Moodle context" --route-mode manual --tools 
 
 ## Routing Evaluation
 
-`auto` routing is now evaluated against an explicit fixture in [`evals/routing_eval_v1.json`](/Users/mattp/projects/agentic_orchestrator/evals/routing_eval_v1.json).
+`auto` routing is evaluated against an explicit fixture in [`evals/routing_eval_v1.json`](/Users/mattp/projects/agentic_orchestrator/evals/routing_eval_v1.json).
 
 Each case records:
 
+- `query_style`
 - `preferred_tools`
 - `acceptable_tool_sets`
 - `disallowed_tools`
 - `notes`
+
+The broadened slice now includes harder, more natural Moodle-development wording:
+
+- debugging phrasing such as “not showing up” or “still does not see it”
+- messy workflow questions such as “where would I look to understand this page flow?”
+- mixed docs+code questions like “where is this service actually wired up?”
+- intentionally ambiguous asks where more than one tool set can still be useful
 
 Routing quality statuses are deterministic:
 
@@ -181,6 +189,18 @@ Routing quality statuses are deterministic:
 - `WRONG`: selected tools did not match any useful expected routing pattern
 
 This evaluation is about tool-set choice, not retrieval quality inside each sibling tool.
+
+`query_style` is a small reporting aid, not a planner taxonomy. It helps show which styles are strongest or weakest as the benchmark gets harder:
+
+- `conceptual`
+- `implementation`
+- `file_location`
+- `debugging`
+- `ui`
+- `workflow`
+- `ambiguous`
+
+As the routing eval broadens, lower scores do not automatically mean the router regressed. They can also mean the benchmark is now covering more realistic and less neatly classifiable queries.
 
 ## CLI
 
@@ -233,6 +253,7 @@ The routing review bundle includes:
 - `routing_eval.txt`
 - `mode_comparison.json`
 - `mode_comparison.md`
+- style-aware routing breakdowns inside the eval outputs
 - example orchestrator outputs
 - `config-used.json`
 - `pytest.txt`
@@ -245,5 +266,6 @@ The summary explicitly states whether the review used `real_local_tools` or `moc
 
 - `auto` remains rule-based and will still miss some edge-case phrasing
 - Routing evaluation grades tool-set choice only, not per-tool retrieval quality
+- A broader routing eval can expose honest ambiguity or weakness without implying the sibling tools themselves failed
 - Generic low-signal questions still fall back to `docs + code`
 - The orchestrator remains a context assembler rather than a planner

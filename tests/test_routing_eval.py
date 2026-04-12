@@ -8,6 +8,7 @@ from agentic_orchestrator.routing_eval import (
     compare_modes_for_case,
     grade_routing_case,
     load_routing_eval_cases,
+    render_routing_eval_text,
 )
 
 
@@ -21,6 +22,7 @@ def test_load_routing_eval_cases_from_fixture(tmp_path: Path) -> None:
                     {
                         "id": "one",
                         "query": "Where do settings go?",
+                        "query_style": "ambiguous",
                         "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
                         "acceptable_tool_sets": [["agentic_devdocs"]],
                         "disallowed_tools": ["agentic_sitemap"],
@@ -34,6 +36,7 @@ def test_load_routing_eval_cases_from_fixture(tmp_path: Path) -> None:
     cases = load_routing_eval_cases(fixture)
     assert len(cases) == 1
     assert cases[0].id == "one"
+    assert cases[0].query_style == "ambiguous"
     assert cases[0].acceptable_tool_sets == [["agentic_devdocs"]]
 
 
@@ -41,6 +44,7 @@ def test_grade_routing_case_semantics() -> None:
     case = RoutingEvalCase(
         id="test",
         query="query",
+        query_style="debugging",
         preferred_tools=["agentic_devdocs", "agentic_indexer"],
         acceptable_tool_sets=[["agentic_devdocs"]],
         disallowed_tools=["agentic_sitemap"],
@@ -58,6 +62,7 @@ def test_compare_modes_for_case_returns_mode_tool_sets() -> None:
     case = RoutingEvalCase(
         id="page_type",
         query="What page type is this in Moodle?",
+        query_style="workflow",
         preferred_tools=["agentic_sitemap"],
         acceptable_tool_sets=[],
         disallowed_tools=["agentic_indexer"],
@@ -67,5 +72,32 @@ def test_compare_modes_for_case_returns_mode_tool_sets() -> None:
     )
     comparison = compare_modes_for_case(case)
     assert comparison["case_id"] == "page_type"
+    assert comparison["query_style"] == "workflow"
     assert comparison["auto_tools"] == ["agentic_sitemap"]
     assert comparison["manual_tools"] == ["agentic_sitemap"]
+
+
+def test_render_routing_eval_text_includes_style_breakdown() -> None:
+    evaluation = {
+        "summary": {"CORRECT": 1, "ACCEPTABLE": 1, "OVERCALLED": 0, "UNDERCALLED": 0, "WRONG": 0},
+        "by_query_style": {
+            "debugging": {"CORRECT": 1, "ACCEPTABLE": 0, "OVERCALLED": 0, "UNDERCALLED": 0, "WRONG": 0},
+            "ambiguous": {"CORRECT": 0, "ACCEPTABLE": 1, "OVERCALLED": 0, "UNDERCALLED": 0, "WRONG": 0},
+        },
+        "cases": [
+            {
+                "case_id": "one",
+                "query_style": "debugging",
+                "selected_tools": ["agentic_indexer"],
+                "preferred_tools": ["agentic_indexer"],
+                "acceptable_tool_sets": [],
+                "disallowed_tools": [],
+                "status": "CORRECT",
+                "reason": "ok",
+            }
+        ],
+    }
+    text = render_routing_eval_text(evaluation)
+    assert "By query style:" in text
+    assert "debugging: correct=1" in text
+    assert "[debugging]" in text

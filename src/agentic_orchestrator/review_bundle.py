@@ -238,7 +238,7 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         "## Evaluation Slice",
         "",
         f"- Routing cases evaluated: {len(evaluation['cases'])}",
-        "- Focus: broader `auto` routing for docs, code, render/UI, file-location, and site/workflow queries",
+        "- Focus: broader `auto` routing for docs, code, render/UI, file-location, debugging, ambiguous, and site/workflow queries",
         "",
         "## Auto Routing Changes",
         "",
@@ -263,19 +263,34 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         f"- undercalled: {evaluation['summary']['UNDERCALLED']}",
         f"- wrong: {evaluation['summary']['WRONG']}",
         "",
-        "## Representative Cases",
+        "## By Query Style",
         "",
     ]
+    for style, counts in sorted(evaluation["by_query_style"].items()):
+        summary_lines.append(
+            f"- `{style}`: "
+            + ", ".join(
+                f"{key.lower()}={counts[key]}"
+                for key in ("CORRECT", "ACCEPTABLE", "OVERCALLED", "UNDERCALLED", "WRONG")
+                if counts[key] > 0
+            )
+        )
+    summary_lines.extend(["", "## Representative Cases", ""])
     for case in evaluation["cases"][:6]:
-        summary_lines.append(f"- `{case['case_id']}`: {case['status']} -> {', '.join(case['selected_tools'])}")
+        summary_lines.append(f"- `{case['case_id']}` [{case['query_style']}]: {case['status']} -> {', '.join(case['selected_tools'])}")
+    weak_cases = [case for case in evaluation["cases"] if case["status"] != "CORRECT"]
+    if weak_cases:
+        summary_lines.extend(["", "## Newly Exposed Weak Cases", ""])
+        for case in weak_cases[:10]:
+            summary_lines.append(f"- `{case['case_id']}` [{case['query_style']}]: {case['status']} -> {case['reason']}")
     summary_lines.extend(
         [
             "",
             "## Remaining Limitations",
             "",
-            "- `auto` remains rule-based and will still miss some edge-case phrasing",
+            "- `auto` remains rule-based and this broader eval is expected to expose more misses and borderline cases over time",
             "- Routing evaluation grades tool-set choice only, not retrieval quality within each sibling tool",
-            "- Generic queries without strong cues still fall back to docs+code",
+            "- Ambiguous debugging and workflow phrasing are still the most likely weak areas",
             "",
             "## Tool Paths Used",
             "",
@@ -302,10 +317,12 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
 def _serializable_eval(evaluation: dict[str, object]) -> dict[str, object]:
     return {
         "summary": evaluation["summary"],
+        "by_query_style": evaluation["by_query_style"],
         "cases": [
             {
                 "case_id": case["case_id"],
                 "query": case["query"],
+                "query_style": case["query_style"],
                 "preferred_tools": case["preferred_tools"],
                 "acceptable_tool_sets": case["acceptable_tool_sets"],
                 "disallowed_tools": case["disallowed_tools"],

@@ -4,6 +4,7 @@
     {
       "id": "admin_settings_location",
       "query": "Where do Moodle plugin admin settings go?",
+      "query_style": "conceptual",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [["agentic_devdocs"], ["agentic_indexer"]],
       "disallowed_tools": ["agentic_sitemap"],
@@ -13,6 +14,7 @@
     {
       "id": "scheduled_task_wiring",
       "query": "How does Moodle know about my scheduled task?",
+      "query_style": "conceptual",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [],
       "disallowed_tools": ["agentic_sitemap"],
@@ -21,6 +23,7 @@
     {
       "id": "language_strings_file",
       "query": "What file contains a plugin's language strings?",
+      "query_style": "file_location",
       "preferred_tools": ["agentic_indexer"],
       "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
       "disallowed_tools": ["agentic_sitemap"],
@@ -30,6 +33,7 @@
     {
       "id": "generic_rendering_question",
       "query": "How should this render in Moodle?",
+      "query_style": "ui",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
       "disallowed_tools": [],
@@ -38,6 +42,7 @@
     {
       "id": "behat_feature_location",
       "query": "Where do Behat feature files go?",
+      "query_style": "file_location",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [["agentic_devdocs"]],
       "disallowed_tools": ["agentic_sitemap"],
@@ -46,6 +51,7 @@
     {
       "id": "privacy_metadata_requirements",
       "query": "What do I need to implement for privacy metadata?",
+      "query_style": "implementation",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [],
       "disallowed_tools": ["agentic_sitemap"],
@@ -54,6 +60,7 @@
     {
       "id": "web_service_registration",
       "query": "Where do Moodle plugin web services get registered?",
+      "query_style": "implementation",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [],
       "disallowed_tools": ["agentic_sitemap"],
@@ -62,6 +69,7 @@
     {
       "id": "page_type_lookup",
       "query": "What page type is this in Moodle?",
+      "query_style": "workflow",
       "preferred_tools": ["agentic_sitemap"],
       "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
       "disallowed_tools": ["agentic_indexer"],
@@ -71,6 +79,7 @@
     {
       "id": "service_wiring_and_definition",
       "query": "How should I wire up a service and where is it defined?",
+      "query_style": "implementation",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [],
       "disallowed_tools": ["agentic_sitemap"],
@@ -79,6 +88,7 @@
     {
       "id": "ui_pattern_rendering_fit",
       "query": "How does this UI pattern fit with Moodle rendering?",
+      "query_style": "ui",
       "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
       "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
       "disallowed_tools": [],
@@ -88,6 +98,7 @@
     {
       "id": "workflow_navigation",
       "query": "How do I navigate from dashboard to notification preferences?",
+      "query_style": "workflow",
       "preferred_tools": ["agentic_sitemap"],
       "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
       "disallowed_tools": ["agentic_indexer"],
@@ -103,10 +114,193 @@
     {
       "id": "explicit_definition_lookup",
       "query": "Where is mod_forum\\\\external\\\\discussion_exporter defined?",
+      "query_style": "file_location",
       "preferred_tools": ["agentic_indexer"],
       "acceptable_tool_sets": [],
       "disallowed_tools": ["agentic_sitemap"],
       "notes": ["Symbol/file lookup should stay code-first."]
+    },
+    {
+      "id": "plugin_settings_not_showing",
+      "query": "My plugin settings are not showing up — what should I check?",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": [],
+      "notes": ["Natural debugging phrasing for admin settings visibility."]
+    },
+    {
+      "id": "service_actually_wired_up",
+      "query": "Where is this service actually wired up?",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Could be answered code-first, but docs+code is ideal for wiring context."]
+    },
+    {
+      "id": "task_natural_phrasing",
+      "query": "How does Moodle know about this task?",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Messier phrasing of scheduled-task registration."],
+      "compare_modes": true
+    },
+    {
+      "id": "rendering_short_question",
+      "query": "What should render this?",
+      "query_style": "ui",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": [],
+      "notes": ["Short rendering question without page cues."]
+    },
+    {
+      "id": "page_fit_question",
+      "query": "Where does this page fit in Moodle?",
+      "query_style": "workflow",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Page-context framing, docs may help but site is primary."]
+    },
+    {
+      "id": "string_not_showing_up",
+      "query": "Why is this string not showing up?",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["String debugging is often code-first but docs can still help."]
+    },
+    {
+      "id": "files_involved_setting",
+      "query": "What files are involved in adding this setting?",
+      "query_style": "file_location",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Concrete file-location phrasing around settings."]
+    },
+    {
+      "id": "ui_handled_in_moodle",
+      "query": "How should this UI be handled in Moodle?",
+      "query_style": "ui",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["UI handling question without explicit page-context wording."]
+    },
+    {
+      "id": "page_flow_understanding",
+      "query": "Where would I look to understand this page flow?",
+      "query_style": "workflow",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Natural page-flow phrasing."]
+    },
+    {
+      "id": "component_origin_question",
+      "query": "How do I figure out where this component comes from?",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Could be concept or code, but source tracing is usually code-first."]
+    },
+    {
+      "id": "external_function_not_seen",
+      "query": "I added an external function but Moodle still does not see it",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Natural web-service debugging phrasing."]
+    },
+    {
+      "id": "admin_page_looks_wrong",
+      "query": "This admin page looks wrong, where should I start?",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_sitemap"], ["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Page-context question with some ambiguity about whether code should be pulled in."]
+    },
+    {
+      "id": "trace_output_origin",
+      "query": "I need to trace where this output is coming from",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Tracing output origin is usually code-first."]
+    },
+    {
+      "id": "who_decides_page_type",
+      "query": "Which part of Moodle decides what page this is?",
+      "query_style": "workflow",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Page-type reasoning should stay site-oriented."]
+    },
+    {
+      "id": "uncertain_context_source",
+      "query": "I cannot tell whether this belongs in docs, code, or site context",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Deliberately messy meta-routing phrasing."]
+    },
+    {
+      "id": "scheduled_task_never_appearing",
+      "query": "Why is my scheduled task never appearing?",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Debugging variant of scheduled-task registration."]
+    },
+    {
+      "id": "privacy_provider_ignored",
+      "query": "My privacy provider changes are ignored, what should I inspect?",
+      "query_style": "debugging",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Debugging variant of privacy metadata work."]
+    },
+    {
+      "id": "navigation_path_messy",
+      "query": "How do I make sense of this navigation path in Moodle?",
+      "query_style": "workflow",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Messy workflow phrasing that should still bias toward site context."],
+      "compare_modes": true
+    },
+    {
+      "id": "behat_cannot_find_page",
+      "query": "Where should I look if a Behat scenario cannot find the page?",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_sitemap"], ["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Behat failure with page-discovery wording can plausibly include docs and site context."]
+    },
+    {
+      "id": "settings_link_but_flow_wrong",
+      "query": "The settings link exists but the page flow feels wrong",
+      "query_style": "ambiguous",
+      "preferred_tools": ["agentic_devdocs", "agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_sitemap"], ["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Settings-related page-flow issue where site context matters most."]
     }
   ]
 }
