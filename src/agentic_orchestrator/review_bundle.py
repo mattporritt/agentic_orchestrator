@@ -1,4 +1,4 @@
-"""Generate a review artifact bundle for the thin prototype."""
+"""Generate a routing-focused review artifact bundle for the thin prototype."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from pathlib import Path
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
 from agentic_orchestrator.errors import ConfigurationError
 from agentic_orchestrator.orchestrator import OrchestratorService
+from agentic_orchestrator.routing_eval import (
+    compare_modes_for_case,
+    evaluate_auto_routing,
+    load_routing_eval_cases,
+    render_routing_eval_text,
+)
 
 
 @dataclass(frozen=True)
@@ -44,6 +50,7 @@ def _mock_payload(tool: str, query: str) -> dict:
             "web service": ["db/services.php", "classes/external"],
             "privacy": ["classes/privacy/provider.php", "db/privacy.php"],
             "render": ["classes/output/renderer.php", "templates/example.mustache"],
+            "behat": ["tests/behat/example.feature", "tests/behat/behat_mod_example.php"],
         }
         matched = next((key for key in anchors if key in normalized), "render")
         return {
@@ -76,6 +83,7 @@ def _mock_payload(tool: str, query: str) -> dict:
             "web service": ("mod/forum/db/services.php", "mod_forum\\external\\discussion_exporter"),
             "privacy": ("mod/example/classes/privacy/provider.php", "mod_example\\privacy\\provider"),
             "render": ("mod/forum/renderer.php", "mod_forum\\output\\renderer"),
+            "behat": ("mod/forum/tests/behat/manage_discussions.feature", None),
         }
         matched = next((key for key in payloads if key in normalized), "render")
         file_path, symbol = payloads[matched]
@@ -188,90 +196,86 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     repo_root = resolve_repo_root()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     bundle_dir = repo_root / "_smoke_test" / "review_bundle" / timestamp
-    bundle_dir.mkdir(parents=True, exist_ok=True)
+    examples_dir = bundle_dir / "example_outputs"
+    examples_dir.mkdir(parents=True, exist_ok=True)
 
     runtime = build_review_runtime(config_path=config_path, allow_mock_fallback=allow_mock_fallback)
     service = runtime.service
     config = runtime.config
+    cases = load_routing_eval_cases()
+    evaluation = evaluate_auto_routing(service, cases=cases)
+    comparison_cases = [case for case in cases if case.compare_modes]
+    comparisons = [compare_modes_for_case(case) for case in comparison_cases]
 
-    examples = {
-        "admin_settings": {
-            "query": "add admin settings to a plugin",
-            "context": {},
-            "route_mode": "task",
-            "manual_tools": [],
-        },
-        "scheduled_task": {
-            "query": "register a scheduled task",
-            "context": {},
-            "route_mode": "task",
-            "manual_tools": [],
-        },
-        "web_service": {
-            "query": "define a web service",
-            "context": {},
-            "route_mode": "task",
-            "manual_tools": [],
-        },
-        "privacy_metadata": {
-            "query": "add privacy metadata",
-            "context": {},
-            "route_mode": "task",
-            "manual_tools": [],
-        },
-        "render_ui": {
-            "query": "How should this render in Moodle?",
-            "context": {"site_lookup": {"mode": "page_type", "query": "dashboard"}},
-            "route_mode": "task",
-            "manual_tools": [],
-        },
-    }
+    for case_result in evaluation["cases"]:
+        slug = case_result["case_id"]
+        (examples_dir / f"{slug}.auto.json").write_text(
+            json.dumps(case_result["payload"], indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
-    routing_lines: list[str] = ["# Routing Report", ""]
-    summary_lines: list[str] = [
-        "# Review Summary",
-        "",
-        "## What The Orchestrator Does",
-        "",
-        "- Accepts a task query and optional lightweight context",
-        "- Applies explicit routing modes to the three runtime-facing tools",
-        "- Calls each selected tool via subprocess JSON-contract mode",
-        "- Validates the shared outer envelope shape",
-        "- Merges tool results into grouped docs/code/site sections",
-        "- Emits deterministic suggested next steps grounded in returned evidence",
+    for comparison in comparisons:
+        case = next(item for item in cases if item.id == comparison["case_id"])
+        task_payload = service.query(query=case.query, context=case.context, route_mode="task")
+        manual_payload = service.query(query=case.query, context=case.context, route_mode="manual", manual_tools=case.preferred_tools)
+        (examples_dir / f"{case.id}.task.json").write_text(json.dumps(task_payload, indent=2, sort_keys=True), encoding="utf-8")
+        (examples_dir / f"{case.id}.manual.json").write_text(json.dumps(manual_payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    (bundle_dir / "routing_eval.json").write_text(json.dumps(_serializable_eval(evaluation), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(_serializable_eval(evaluation)), encoding="utf-8")
+    (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "mode_comparison.md").write_text(_render_mode_comparison_markdown(comparisons), encoding="utf-8")
+    (bundle_dir / "config-used.json").write_text(json.dumps(_sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+
+    summary_lines = [
+        "# Routing Review Summary",
         "",
         "## Runtime Mode",
         "",
         f"- Review bundle execution mode: `{runtime.execution_mode}`",
         f"- Config path: `{config_path or config.config_path or '(none)'}`",
         "",
-        "## Example Execution",
+        "## Evaluation Slice",
+        "",
+        f"- Routing cases evaluated: {len(evaluation['cases'])}",
+        "- Focus: broader `auto` routing for docs, code, render/UI, file-location, and site/workflow queries",
+        "",
+        "## Auto Routing Changes",
+        "",
+        "- Broadened `auto` with explicit conceptual, implementation, file-location, render, workflow, and site-context signals",
+        "- Reduced eager sitemap use for generic render questions without page/workflow context",
+        "- Improved mixed docs+code routing for service wiring, Behat placement, and implementation-requirement queries",
+        "- Kept `task` and `manual` behavior intact",
+        "",
+        "## Routing Status Semantics",
+        "",
+        "- `CORRECT`: selected tools exactly matched the preferred set",
+        "- `ACCEPTABLE`: selected tools matched an explicitly acceptable set",
+        "- `OVERCALLED`: selected tools formed a useful superset but included an unnecessary extra tool",
+        "- `UNDERCALLED`: selected tools omitted a tool expected for the case",
+        "- `WRONG`: selected tools did not match any useful expected routing pattern",
+        "",
+        "## Results",
+        "",
+        f"- correct: {evaluation['summary']['CORRECT']}",
+        f"- acceptable: {evaluation['summary']['ACCEPTABLE']}",
+        f"- overcalled: {evaluation['summary']['OVERCALLED']}",
+        f"- undercalled: {evaluation['summary']['UNDERCALLED']}",
+        f"- wrong: {evaluation['summary']['WRONG']}",
+        "",
+        "## Representative Cases",
         "",
     ]
-
-    for slug, item in examples.items():
-        payload = service.query(
-            query=item["query"],
-            context=item["context"],
-            route_mode=item["route_mode"],
-            manual_tools=item["manual_tools"],
-        )
-        (bundle_dir / f"{slug}.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        result = payload["results"][0]
-        tools = ", ".join(call["tool"] for call in result["diagnostics"]["tools_called"])
-        routing_lines.append(f"- `{slug}`: mode={payload['intent']['route_mode']} tools={tools}")
-        summary_lines.append(f"- `{slug}` used `{runtime.execution_mode}` and called: {tools}")
-
+    for case in evaluation["cases"][:6]:
+        summary_lines.append(f"- `{case['case_id']}`: {case['status']} -> {', '.join(case['selected_tools'])}")
     summary_lines.extend(
         [
             "",
-            "## Merged Result Structure",
+            "## Remaining Limitations",
             "",
-            "- `docs_results` preserve original devdocs contract results",
-            "- `code_results` preserve original indexer contract results",
-            "- `site_results` preserve original sitemap contract results",
-            "- `suggested_next_steps` are derived deterministically from returned provenance",
-            "- `diagnostics.tools_called` records which tools ran and why",
+            "- `auto` remains rule-based and will still miss some edge-case phrasing",
+            "- Routing evaluation grades tool-set choice only, not retrieval quality within each sibling tool",
+            "- Generic queries without strong cues still fall back to docs+code",
             "",
             "## Tool Paths Used",
             "",
@@ -284,24 +288,45 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     summary_lines.extend(
         [
             "",
-            "## Intentionally Out Of Scope",
-            "",
-            "- Autonomous planning",
-            "- Code modification or execution",
-            "- LLM calls",
-            "- APIs, services, or persistent orchestration state",
-            "",
-            f"Review artifact bundle path: {bundle_dir}",
+            f"Routing review artifact bundle path: {bundle_dir}",
         ]
     )
-
-    (bundle_dir / "routing-report.md").write_text("\n".join(routing_lines) + "\n", encoding="utf-8")
     (bundle_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
-    (bundle_dir / "config-used.json").write_text(json.dumps(_sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+
     _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
     _write_command_output(bundle_dir / "git-status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
     _write_command_output(bundle_dir / "git-commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
     return bundle_dir
+
+
+def _serializable_eval(evaluation: dict[str, object]) -> dict[str, object]:
+    return {
+        "summary": evaluation["summary"],
+        "cases": [
+            {
+                "case_id": case["case_id"],
+                "query": case["query"],
+                "preferred_tools": case["preferred_tools"],
+                "acceptable_tool_sets": case["acceptable_tool_sets"],
+                "disallowed_tools": case["disallowed_tools"],
+                "selected_tools": case["selected_tools"],
+                "status": case["status"],
+                "reason": case["reason"],
+                "notes": case["notes"],
+            }
+            for case in evaluation["cases"]
+        ],
+    }
+
+
+def _render_mode_comparison_markdown(comparisons: list[dict[str, object]]) -> str:
+    lines = ["# Mode Comparison", ""]
+    for item in comparisons:
+        lines.append(f"- `{item['case_id']}`")
+        lines.append(f"  task: {', '.join(item['task_tools'])}")
+        lines.append(f"  auto: {', '.join(item['auto_tools'])}")
+        lines.append(f"  manual: {', '.join(item['manual_tools'])}")
+    return "\n".join(lines) + "\n"
 
 
 def _sanitized_config_report(config: OrchestratorConfig) -> dict[str, object]:

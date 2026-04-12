@@ -1,0 +1,112 @@
+{
+  "version": "v1",
+  "cases": [
+    {
+      "id": "admin_settings_location",
+      "query": "Where do Moodle plugin admin settings go?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs"], ["agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Known implementation-plus-docs task."],
+      "compare_modes": true
+    },
+    {
+      "id": "scheduled_task_wiring",
+      "query": "How does Moodle know about my scheduled task?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Needs docs and code registration context."]
+    },
+    {
+      "id": "language_strings_file",
+      "query": "What file contains a plugin's language strings?",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Primarily a file-location question."],
+      "compare_modes": true
+    },
+    {
+      "id": "generic_rendering_question",
+      "query": "How should this render in Moodle?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Generic rendering should not require sitemap by default."]
+    },
+    {
+      "id": "behat_feature_location",
+      "query": "Where do Behat feature files go?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs"]],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Docs explain placement; code can add local examples."]
+    },
+    {
+      "id": "privacy_metadata_requirements",
+      "query": "What do I need to implement for privacy metadata?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Implementation requirements plus concrete code targets."]
+    },
+    {
+      "id": "web_service_registration",
+      "query": "Where do Moodle plugin web services get registered?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Registration and file-definition context."]
+    },
+    {
+      "id": "page_type_lookup",
+      "query": "What page type is this in Moodle?",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Pure site-context lookup."],
+      "compare_modes": true
+    },
+    {
+      "id": "service_wiring_and_definition",
+      "query": "How should I wire up a service and where is it defined?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Mixed conceptual plus definition question."]
+    },
+    {
+      "id": "ui_pattern_rendering_fit",
+      "query": "How does this UI pattern fit with Moodle rendering?",
+      "preferred_tools": ["agentic_devdocs", "agentic_indexer"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]],
+      "disallowed_tools": [],
+      "notes": ["Rendering concepts plus implementation context."],
+      "compare_modes": true
+    },
+    {
+      "id": "workflow_navigation",
+      "query": "How do I navigate from dashboard to notification preferences?",
+      "preferred_tools": ["agentic_sitemap"],
+      "acceptable_tool_sets": [["agentic_devdocs", "agentic_sitemap"]],
+      "disallowed_tools": ["agentic_indexer"],
+      "notes": ["Workflow/path question."],
+      "context": {
+        "site_lookup": {
+          "mode": "path",
+          "from_page": "dashboard",
+          "to_page": "notification preferences"
+        }
+      }
+    },
+    {
+      "id": "explicit_definition_lookup",
+      "query": "Where is mod_forum\\\\external\\\\discussion_exporter defined?",
+      "preferred_tools": ["agentic_indexer"],
+      "acceptable_tool_sets": [],
+      "disallowed_tools": ["agentic_sitemap"],
+      "notes": ["Symbol/file lookup should stay code-first."]
+    }
+  ]
+}

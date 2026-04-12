@@ -13,10 +13,20 @@ def test_task_routing_preserves_admin_settings_route() -> None:
     assert [tool.tool_name for tool in decision.tools] == ["agentic_devdocs", "agentic_indexer"]
 
 
-def test_auto_routing_can_choose_single_tool_for_docs_query() -> None:
-    decision = route_query("Where are the docs for the output API?", route_mode="auto")
+def test_auto_routing_picks_docs_and_code_for_service_wiring_question() -> None:
+    decision = route_query("How should I wire up a service and where is it defined?", route_mode="auto")
     assert decision.route_mode == "auto"
-    assert [tool.tool_name for tool in decision.tools] == ["agentic_devdocs"]
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_devdocs", "agentic_indexer"]
+
+
+def test_auto_routing_avoids_sitemap_for_generic_render_question() -> None:
+    decision = route_query("How should this render in Moodle?", route_mode="auto")
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_devdocs", "agentic_indexer"]
+
+
+def test_auto_routing_can_choose_site_only_for_page_type_query() -> None:
+    decision = route_query("What page type is this in Moodle?", route_mode="auto")
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_sitemap"]
 
 
 def test_manual_routing_uses_selected_tools_only() -> None:

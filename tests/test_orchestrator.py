@@ -140,6 +140,9 @@ def test_orchestrator_merges_grouped_results_and_preserves_tool_boundaries() -> 
     assert result["content"]["site_results"] == []
     assert payload["intent"]["route_mode"] == "task"
     assert result["diagnostics"]["tools_called"][0]["tool"] == "agentic_devdocs"
+    assert result["diagnostics"]["route_mode"] == "task"
+    assert "selected_tools" in result["diagnostics"]
+    assert "routing_reasons" in result["diagnostics"]
 
 
 def test_orchestrator_manual_mode_uses_requested_tools() -> None:
@@ -162,3 +165,10 @@ def test_orchestrator_output_is_deterministic_for_same_inputs() -> None:
     first = service.query(query="define a web service", route_mode="task")
     second = service.query(query="define a web service", route_mode="task")
     assert first == second
+
+
+def test_orchestrator_auto_mode_uses_broader_routing_rules() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(query="Where do Behat feature files go?", route_mode="auto")
+    called = [item["tool"] for item in payload["results"][0]["diagnostics"]["tools_called"]]
+    assert called == ["agentic_devdocs", "agentic_indexer"]

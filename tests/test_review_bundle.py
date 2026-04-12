@@ -55,5 +55,8 @@ def test_generate_review_bundle_can_use_mock_fallback(tmp_path: Path, monkeypatc
     bundle_dir = generate_review_bundle(config_path=str(tmp_path / "missing.toml"), allow_mock_fallback=True)
     summary = (bundle_dir / "summary.md").read_text(encoding="utf-8")
     config_used = json.loads((bundle_dir / "config-used.json").read_text(encoding="utf-8"))
+    routing_eval = json.loads((bundle_dir / "routing_eval.json").read_text(encoding="utf-8"))
     assert "mock_fallback" in summary
     assert config_used["tools"][0]["tool"] == "agentic_devdocs"
+    assert "summary" in routing_eval
+    assert (bundle_dir / "mode_comparison.md").exists()

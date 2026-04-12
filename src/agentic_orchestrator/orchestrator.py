@@ -65,7 +65,7 @@ class OrchestratorService:
         intent = self._build_intent(decision)
         tools_called = [self._serialize_record(item) for item in records]
 
-        return build_orchestrator_envelope(
+        payload = build_orchestrator_envelope(
             query=query,
             intent=intent,
             docs_results=docs_results,
@@ -76,6 +76,11 @@ class OrchestratorService:
             summary=summary,
             notes=notes + [f"tool_failure: {item['tool']} {item['mode']} {item['error']}" for item in failures],
         )
+        diagnostics = payload["results"][0]["diagnostics"]
+        diagnostics["route_mode"] = decision.route_mode
+        diagnostics["routing_reasons"] = decision.routing_reasons
+        diagnostics["selected_tools"] = [request.tool_name for request in decision.tools]
+        return payload
 
     def _run_request(self, request: ToolRequest) -> dict[str, Any]:
         if request.tool_name == "agentic_devdocs":
@@ -105,7 +110,11 @@ class OrchestratorService:
         site_payload: dict[str, Any] | None,
         failures: list[dict[str, str]],
     ) -> list[str]:
-        notes = [f"routed task type: {decision.task_type}", f"route mode: {decision.route_mode}"]
+        notes = [
+            f"routed task type: {decision.task_type}",
+            f"route mode: {decision.route_mode}",
+            f"routing reasons: {', '.join(decision.routing_reasons)}",
+        ]
         for tool_name, payload in (
             ("agentic_devdocs", docs_payload),
             ("agentic_indexer", code_payload),

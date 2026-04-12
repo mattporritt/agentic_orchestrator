@@ -15,6 +15,7 @@ It stays intentionally narrow. It calls those tools in their existing CLI JSON-c
 - A versioned orchestrator runtime contract
 - Explicit routing modes: `task`, `auto`, `manual`
 - A provenance-preserving context assembler
+- A lightweight routing evaluation loop for `auto`
 
 ## What It Is Not
 
@@ -50,16 +51,6 @@ The orchestrator keeps the same outer envelope shape as the sibling tools:
       "type": "orchestrated_context",
       "rank": 1,
       "confidence": "high",
-      "source": {
-        "name": "orchestrator",
-        "type": "multi_tool_runtime",
-        "url": null,
-        "canonical_url": null,
-        "path": null,
-        "document_title": null,
-        "section_title": null,
-        "heading_path": []
-      },
       "content": {
         "docs_results": [],
         "code_results": [],
@@ -69,6 +60,9 @@ The orchestrator keeps the same outer envelope shape as the sibling tools:
       },
       "diagnostics": {
         "tools_called": [],
+        "route_mode": "task",
+        "routing_reasons": [],
+        "selected_tools": [],
         "selection_strategy": "rule_based_routing_plus_grouped_merge",
         "notes": []
       }
@@ -77,40 +71,20 @@ The orchestrator keeps the same outer envelope shape as the sibling tools:
 }
 ```
 
-The orchestrator adds a thin merged `content` layer but preserves underlying tool results unchanged inside:
+The orchestrator keeps grouped tool results and preserves provenance:
 
 - `docs_results`
 - `code_results`
 - `site_results`
 - `suggested_next_steps`
 - `summary`
+- `diagnostics.tools_called`
 
 ## Local Tool Configuration
 
 Configuration is explicit and local. You can provide it with a TOML file, CLI flags, and environment variables.
 
-The recommended approach is a config file like [`config.example.toml`](/Users/mattp/projects/agentic_orchestrator/config.example.toml):
-
-```toml
-[tools.devdocs]
-command = "/Users/you/projects/agentic_devdocs/.venv/bin/python"
-workdir = "/Users/you/projects/agentic_devdocs"
-extra_args = ["-m", "agentic_docs.cli"]
-env = { PYTHONPATH = "/Users/you/projects/agentic_devdocs/src:/Library/.../site-packages" }
-
-[tools.indexer]
-command = "/Users/you/projects/agentic_indexer/.venv/bin/moodle-indexer"
-workdir = "/Users/you/projects/agentic_indexer"
-
-[tools.sitemap]
-command = "/Users/you/projects/agentic_sitemap/.venv/bin/moodle-sitemap"
-workdir = "/Users/you/projects/agentic_sitemap"
-
-[resources]
-devdocs_db_path = "/Users/you/projects/agentic_devdocs/_smoke_test/agentic-docs.db"
-indexer_db_path = "/Users/you/projects/agentic_indexer/.db/moodle-index.sqlite"
-sitemap_run_dir = "/Users/you/projects/agentic_sitemap/discovery-runs/2026-04-09T025735Z"
-```
+The recommended approach is a config file like [`config.example.toml`](/Users/mattp/projects/agentic_orchestrator/config.example.toml).
 
 Supported per-tool config:
 
@@ -133,14 +107,6 @@ CLI and environment variable overrides are also supported:
 - `--sitemap-cmd`, `--sitemap-workdir`, `--sitemap-extra-args`
 - `--devdocs-db-path`, `--indexer-db-path`, `--sitemap-run-dir`
 
-Environment variable equivalents:
-
-- `AGENTIC_ORCHESTRATOR_DEVDOCS_COMMAND`
-- `AGENTIC_ORCHESTRATOR_DEVDOCS_WORKDIR`
-- `AGENTIC_ORCHESTRATOR_DEVDOCS_EXTRA_ARGS`
-- `AGENTIC_ORCHESTRATOR_DEVDOCS_ENV_JSON`
-- same pattern for `INDEXER` and `SITEMAP`
-
 The orchestrator fails clearly when a configured command is missing, not executable, or missing required resource paths.
 
 ## Route Modes
@@ -149,7 +115,7 @@ Routing stays explicit and inspectable.
 
 ### `task`
 
-This preserves the original narrow task routes for known Moodle development tasks:
+This preserves the narrow task routes for known Moodle development tasks such as:
 
 - admin settings
 - scheduled tasks
@@ -159,18 +125,22 @@ This preserves the original narrow task routes for known Moodle development task
 
 ### `auto`
 
-This is a broader but still controlled mode. It uses lightweight intent signals to decide whether to call:
+`auto` is broader but still controlled. It uses explicit signal families instead of planner logic:
 
-- one tool
-- two tools
-- or all three
+- conceptual cues: `how does`, `how should`, `where do`, `what do I need`
+- implementation/location cues: `wire up`, `register`, `defined`, `what file`, `contains`
+- docs concept cues: `privacy`, `scheduled task`, `web service`, `behat`, `output`, `renderer`
+- site/workflow cues: `page type`, `workflow`, `navigate`, `screen`, `dashboard`
 
-Examples:
+Typical behavior:
 
-- docs-oriented queries can call `agentic_devdocs` only
-- code-oriented queries can call `agentic_indexer` only
-- render/page/workflow queries can call all three
-- general questions fall back to `docs + code`
+- conceptual implementation questions: `docs + code`
+- file-location/debugging questions: usually `code`, sometimes `docs + code`
+- generic rendering questions: `docs + code`
+- page/workflow/site-context questions: `site`
+- page-aware rendering questions: `docs + code + site`
+
+The goal is to call the smallest useful subset of tools, not all three by default.
 
 ### `manual`
 
@@ -191,6 +161,27 @@ agentic-orchestrator query "render this page" --route-mode manual --tools code,s
 agentic-orchestrator query "general Moodle context" --route-mode manual --tools docs --tools code --json
 ```
 
+## Routing Evaluation
+
+`auto` routing is now evaluated against an explicit fixture in [`evals/routing_eval_v1.json`](/Users/mattp/projects/agentic_orchestrator/evals/routing_eval_v1.json).
+
+Each case records:
+
+- `preferred_tools`
+- `acceptable_tool_sets`
+- `disallowed_tools`
+- `notes`
+
+Routing quality statuses are deterministic:
+
+- `CORRECT`: selected tools exactly matched the preferred set
+- `ACCEPTABLE`: selected tools matched an explicitly acceptable set
+- `OVERCALLED`: selected tools formed a useful superset but included an unnecessary extra tool
+- `UNDERCALLED`: selected tools omitted a tool expected for the case
+- `WRONG`: selected tools did not match any useful expected routing pattern
+
+This evaluation is about tool-set choice, not retrieval quality inside each sibling tool.
+
 ## CLI
 
 JSON mode is the main interface:
@@ -202,7 +193,7 @@ agentic-orchestrator query "add admin settings to a plugin" --config ./config.lo
 Auto routing:
 
 ```bash
-agentic-orchestrator query "Where are the docs for privacy providers?" \
+agentic-orchestrator query "How should I wire up a service and where is it defined?" \
   --config ./config.local.toml \
   --route-mode auto \
   --json
@@ -219,11 +210,11 @@ agentic-orchestrator query "How should this render in Moodle?" \
   --json
 ```
 
-## Live Review Bundle
+## Routing Review Bundle
 
-The review bundle now prefers real sibling-tool execution when valid config is present.
+The review bundle now focuses on routing quality and prefers real sibling-tool execution when valid config is present.
 
-Generate a live bundle:
+Generate a routing review bundle:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
@@ -235,46 +226,24 @@ Only allow deterministic mock fallback when you explicitly want it for testing:
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --allow-mock-fallback
 ```
 
-The review bundle includes:
+The routing review bundle includes:
 
 - `summary.md`
-- example orchestrator outputs for representative tasks
+- `routing_eval.json`
+- `routing_eval.txt`
+- `mode_comparison.json`
+- `mode_comparison.md`
+- example orchestrator outputs
 - `config-used.json`
 - `pytest.txt`
 - `git-status.txt`
 - `git-commit.txt`
-- `routing-report.md`
 
-The summary explicitly states whether each example used `real_local_tools` or `mock_fallback`.
-
-## Representative Flows
-
-- Add admin settings to a plugin
-- Register a scheduled task
-- Define a web service
-- Add privacy metadata
-- Understand render/UI context in Moodle
-
-For each, the orchestrator merges the selected tool outputs into one grouped response and emits deterministic suggested next steps grounded in returned evidence.
-
-## Testing
-
-Tests focus on:
-
-- config loading
-- missing/misconfigured tool path handling
-- adapter command construction
-- route-mode selection
-- manual tool selection
-- merged output shape
-- review-bundle real vs fallback selection
-
-They remain deterministic and do not require the sibling tools to be installed for unit-test runs.
+The summary explicitly states whether the review used `real_local_tools` or `mock_fallback`.
 
 ## Current Limitations
 
-- Routing is intentionally lightweight and rule-based
-- Only a narrow subset of sibling tool commands is wrapped
-- Sitemap lookups still rely on explicit or inferable page/page-type/path context
-- Live integration depends on explicit local config being correct
+- `auto` remains rule-based and will still miss some edge-case phrasing
+- Routing evaluation grades tool-set choice only, not per-tool retrieval quality
+- Generic low-signal questions still fall back to `docs + code`
 - The orchestrator remains a context assembler rather than a planner
