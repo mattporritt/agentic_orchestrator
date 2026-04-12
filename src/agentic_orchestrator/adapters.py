@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
-from agentic_orchestrator.config import OrchestratorConfig
+from agentic_orchestrator.config import OrchestratorConfig, ToolCommandConfig
 from agentic_orchestrator.contract import validate_runtime_envelope
 from agentic_orchestrator.errors import ConfigurationError, ToolExecutionError
 from agentic_orchestrator.routing import ToolRequest
@@ -23,6 +22,7 @@ class ToolCallRecord:
     mode: str
     reason: str
     command: list[str]
+    workdir: str | None
 
 
 def default_runner(**kwargs) -> subprocess.CompletedProcess[str]:
@@ -36,20 +36,24 @@ class RuntimeToolAdapter:
 
     tool_name: str
 
-    def __init__(self, *, command: list[str], runner: Runner | None = None) -> None:
-        self.command = list(command)
+    def __init__(self, *, tool_config: ToolCommandConfig, runner: Runner | None = None) -> None:
+        self.tool_config = tool_config
         self.runner = runner or default_runner
 
     def _run_json(self, extra_args: list[str]) -> dict:
+        self.tool_config.validate()
+        command = [self.tool_config.resolved_program(), *(self.tool_config.command[1:]), *(self.tool_config.extra_args or []), *extra_args]
         try:
             completed = self.runner(
-                args=[*self.command, *extra_args],
+                args=command,
                 text=True,
                 capture_output=True,
                 check=False,
+                cwd=self.tool_config.workdir,
+                env=self.tool_config.merged_env(),
             )
         except FileNotFoundError as exc:
-            raise ToolExecutionError(f"{self.tool_name} executable not found: {self.command[0]}") from exc
+            raise ToolExecutionError(f"{self.tool_name} executable not found: {self.tool_config.command[0]}") from exc
 
         if completed.returncode != 0:
             raise ToolExecutionError(
@@ -167,21 +171,22 @@ class AdapterSet:
     @classmethod
     def from_config(cls, config: OrchestratorConfig, runner: Runner | None = None) -> "AdapterSet":
         return cls(
-            devdocs=DevdocsAdapter(command=config.devdocs.command, runner=runner),
-            indexer=IndexerAdapter(command=config.indexer.command, runner=runner),
-            sitemap=SitemapAdapter(command=config.sitemap.command, runner=runner),
+            devdocs=DevdocsAdapter(tool_config=config.devdocs, runner=runner),
+            indexer=IndexerAdapter(tool_config=config.indexer, runner=runner),
+            sitemap=SitemapAdapter(tool_config=config.sitemap, runner=runner),
         )
 
 
 def tool_call_record(config: OrchestratorConfig, request: ToolRequest) -> ToolCallRecord:
     """Build a deterministic record of one routed tool request."""
 
+    tool_config = config.tool_config(request.tool_name)
     if request.tool_name == "agentic_devdocs":
-        cmd = [*config.devdocs.command, "query"]
+        cmd = [*tool_config.command, *(tool_config.extra_args or []), "query"]
     elif request.tool_name == "agentic_indexer":
-        cmd = [*config.indexer.command, request.mode]
+        cmd = [*tool_config.command, *(tool_config.extra_args or []), request.mode]
     elif request.tool_name == "agentic_sitemap":
-        cmd = [*config.sitemap.command, "runtime-query"]
+        cmd = [*tool_config.command, *(tool_config.extra_args or []), "runtime-query"]
     else:
-        cmd = [request.tool_name]
-    return ToolCallRecord(tool=request.tool_name, mode=request.mode, reason=request.reason, command=cmd)
+        cmd = tool_config.command_line()
+    return ToolCallRecord(tool=request.tool_name, mode=request.mode, reason=request.reason, command=cmd, workdir=tool_config.workdir)

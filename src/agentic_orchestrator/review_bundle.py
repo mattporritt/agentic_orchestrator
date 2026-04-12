@@ -1,16 +1,25 @@
-"""Generate a deterministic review artifact bundle for the thin prototype."""
+"""Generate a review artifact bundle for the thin prototype."""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
-from argparse import Namespace
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
+from agentic_orchestrator.errors import ConfigurationError
 from agentic_orchestrator.orchestrator import OrchestratorService
+
+
+@dataclass(frozen=True)
+class ReviewBundleRuntime:
+    service: OrchestratorService
+    execution_mode: str
+    config: OrchestratorConfig
 
 
 def _runtime_source(name: str, path: str | None = None) -> dict:
@@ -113,16 +122,17 @@ def _mock_payload(tool: str, query: str) -> dict:
     }
 
 
-def _mock_runner(*, args, text, capture_output, check):
-    tool = Path(args[0]).name
+def _mock_runner(*, args, text, capture_output, check, cwd=None, env=None):
+    del text, capture_output, check, cwd, env
+    tool = args[1] if len(args) > 1 else Path(args[0]).name
     joined = " ".join(args)
     query = ""
     if "--query" in args:
         query = args[args.index("--query") + 1]
     elif "--symbol" in args:
         query = args[args.index("--symbol") + 1]
-    elif len(args) > 2 and args[1] == "query":
-        query = args[2]
+    elif len(args) > 3 and args[2] == "query":
+        query = args[3]
     if tool == "mock-devdocs":
         payload = _mock_payload("agentic_docs", query)
     elif tool == "mock-indexer":
@@ -134,93 +144,188 @@ def _mock_runner(*, args, text, capture_output, check):
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
 
 
-def generate_review_bundle() -> Path:
-    repo_root = resolve_repo_root()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    bundle_dir = repo_root / "_smoke_test" / "review_bundle" / timestamp
-    bundle_dir.mkdir(parents=True, exist_ok=True)
-
-    config = OrchestratorConfig.from_args(
-        Namespace(
-            devdocs_cmd="mock-devdocs",
-            indexer_cmd="mock-indexer",
-            sitemap_cmd="mock-sitemap",
+def default_mock_config() -> OrchestratorConfig:
+    return OrchestratorConfig.from_sources(
+        args=argparse.Namespace(
+            devdocs_cmd="/bin/sh",
+            devdocs_workdir=None,
+            devdocs_extra_args="mock-devdocs",
+            indexer_cmd="/bin/sh",
+            indexer_workdir=None,
+            indexer_extra_args="mock-indexer",
+            sitemap_cmd="/bin/sh",
+            sitemap_workdir=None,
+            sitemap_extra_args="mock-sitemap",
             devdocs_db_path="/mock/devdocs.sqlite",
             indexer_db_path="/mock/index.sqlite",
             sitemap_run_dir="/mock/sitemap-run",
         )
     )
-    service = OrchestratorService.from_config(config, runner=_mock_runner)
+
+
+def build_review_runtime(*, config_path: str | None = None, allow_mock_fallback: bool = False) -> ReviewBundleRuntime:
+    try:
+        config = OrchestratorConfig.from_sources(config_path=config_path)
+        config.validate_required_resources(["agentic_devdocs", "agentic_indexer", "agentic_sitemap"])
+    except ConfigurationError:
+        if not allow_mock_fallback:
+            raise
+        mock_config = default_mock_config()
+        return ReviewBundleRuntime(
+            service=OrchestratorService.from_config(mock_config, runner=_mock_runner),
+            execution_mode="mock_fallback",
+            config=mock_config,
+        )
+
+    return ReviewBundleRuntime(
+        service=OrchestratorService.from_config(config),
+        execution_mode="real_local_tools",
+        config=config,
+    )
+
+
+def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallback: bool = False) -> Path:
+    repo_root = resolve_repo_root()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    bundle_dir = repo_root / "_smoke_test" / "review_bundle" / timestamp
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    runtime = build_review_runtime(config_path=config_path, allow_mock_fallback=allow_mock_fallback)
+    service = runtime.service
+    config = runtime.config
 
     examples = {
-        "admin_settings": ("add admin settings to a plugin", {}),
-        "scheduled_task": ("register a scheduled task", {}),
-        "web_service": ("define a web service", {}),
-        "privacy_metadata": ("add privacy metadata", {}),
-        "render_ui": ("How should this render in Moodle?", {"site_lookup": {"mode": "page", "query": "course"}}),
+        "admin_settings": {
+            "query": "add admin settings to a plugin",
+            "context": {},
+            "route_mode": "task",
+            "manual_tools": [],
+        },
+        "scheduled_task": {
+            "query": "register a scheduled task",
+            "context": {},
+            "route_mode": "task",
+            "manual_tools": [],
+        },
+        "web_service": {
+            "query": "define a web service",
+            "context": {},
+            "route_mode": "task",
+            "manual_tools": [],
+        },
+        "privacy_metadata": {
+            "query": "add privacy metadata",
+            "context": {},
+            "route_mode": "task",
+            "manual_tools": [],
+        },
+        "render_ui": {
+            "query": "How should this render in Moodle?",
+            "context": {"site_lookup": {"mode": "page_type", "query": "dashboard"}},
+            "route_mode": "task",
+            "manual_tools": [],
+        },
     }
+
     routing_lines: list[str] = ["# Routing Report", ""]
-    for slug, (query, context) in examples.items():
-        payload = service.query(query=query, context=context)
-        (bundle_dir / f"{slug}.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        result = payload["results"][0]
-        tools = ", ".join(call["tool"] for call in result["diagnostics"]["tools_called"])
-        routing_lines.append(f"- `{slug}`: {tools}")
-
-    (bundle_dir / "routing-report.md").write_text("\n".join(routing_lines) + "\n", encoding="utf-8")
-    (bundle_dir / "config.example.toml").write_text((repo_root / "config.example.toml").read_text(encoding="utf-8"), encoding="utf-8")
-    _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
-    _write_command_output(bundle_dir / "git-status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
-    _write_command_output(bundle_dir / "git-commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
-
-    summary = [
+    summary_lines: list[str] = [
         "# Review Summary",
         "",
         "## What The Orchestrator Does",
         "",
         "- Accepts a task query and optional lightweight context",
-        "- Applies explicit rule-based routing to the three runtime-facing tools",
+        "- Applies explicit routing modes to the three runtime-facing tools",
         "- Calls each selected tool via subprocess JSON-contract mode",
         "- Validates the shared outer envelope shape",
         "- Merges tool results into grouped docs/code/site sections",
         "- Emits deterministic suggested next steps grounded in returned evidence",
         "",
-        "## Example Tool Routing",
+        "## Runtime Mode",
         "",
-        "- Admin settings: devdocs + indexer",
-        "- Scheduled task: devdocs + indexer",
-        "- Web service: devdocs + indexer",
-        "- Privacy metadata: devdocs + indexer",
-        "- Render/UI: devdocs + indexer + sitemap",
+        f"- Review bundle execution mode: `{runtime.execution_mode}`",
+        f"- Config path: `{config_path or config.config_path or '(none)'}`",
         "",
-        "## Merged Result Structure",
+        "## Example Execution",
         "",
-        "- `docs_results` preserve original devdocs contract results",
-        "- `code_results` preserve original indexer contract results",
-        "- `site_results` preserve original sitemap contract results",
-        "- `suggested_next_steps` are derived deterministically from returned provenance",
-        "- `diagnostics.tools_called` records which tools ran and why",
-        "",
-        "## Intentionally Out Of Scope",
-        "",
-        "- Autonomous planning",
-        "- Code modification or execution",
-        "- LLM calls",
-        "- APIs, services, or persistent orchestration state",
-        "",
-        "## Notes",
-        "",
-        "- Example outputs in this bundle are generated with deterministic mock tool responders because the sibling tool dependencies are not installed in this workspace by default.",
-        "- Unit tests still exercise the subprocess adapter and contract-validation boundaries directly.",
-        "",
-        f"Review artifact bundle path: {bundle_dir}",
     ]
-    (bundle_dir / "summary.md").write_text("\n".join(summary) + "\n", encoding="utf-8")
+
+    for slug, item in examples.items():
+        payload = service.query(
+            query=item["query"],
+            context=item["context"],
+            route_mode=item["route_mode"],
+            manual_tools=item["manual_tools"],
+        )
+        (bundle_dir / f"{slug}.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        result = payload["results"][0]
+        tools = ", ".join(call["tool"] for call in result["diagnostics"]["tools_called"])
+        routing_lines.append(f"- `{slug}`: mode={payload['intent']['route_mode']} tools={tools}")
+        summary_lines.append(f"- `{slug}` used `{runtime.execution_mode}` and called: {tools}")
+
+    summary_lines.extend(
+        [
+            "",
+            "## Merged Result Structure",
+            "",
+            "- `docs_results` preserve original devdocs contract results",
+            "- `code_results` preserve original indexer contract results",
+            "- `site_results` preserve original sitemap contract results",
+            "- `suggested_next_steps` are derived deterministically from returned provenance",
+            "- `diagnostics.tools_called` records which tools ran and why",
+            "",
+            "## Tool Paths Used",
+            "",
+        ]
+    )
+    for row in config.tool_path_report():
+        summary_lines.append(
+            f"- `{row['tool']}` program=`{row['program']}` workdir=`{row['workdir']}` extra_args=`{row['extra_args']}`"
+        )
+    summary_lines.extend(
+        [
+            "",
+            "## Intentionally Out Of Scope",
+            "",
+            "- Autonomous planning",
+            "- Code modification or execution",
+            "- LLM calls",
+            "- APIs, services, or persistent orchestration state",
+            "",
+            f"Review artifact bundle path: {bundle_dir}",
+        ]
+    )
+
+    (bundle_dir / "routing-report.md").write_text("\n".join(routing_lines) + "\n", encoding="utf-8")
+    (bundle_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    (bundle_dir / "config-used.json").write_text(json.dumps(_sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+    _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
+    _write_command_output(bundle_dir / "git-status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
+    _write_command_output(bundle_dir / "git-commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
     return bundle_dir
 
 
-def main() -> int:
-    bundle_dir = generate_review_bundle()
+def _sanitized_config_report(config: OrchestratorConfig) -> dict[str, object]:
+    return {
+        "config_path": config.config_path,
+        "tools": config.tool_path_report(),
+        "resources": {
+            "devdocs_db_path": config.devdocs_db_path,
+            "indexer_db_path": config.indexer_db_path,
+            "sitemap_run_dir": config.sitemap_run_dir,
+        },
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m agentic_orchestrator.review_bundle")
+    parser.add_argument("--config", help="Optional TOML config file for live sibling tool execution.")
+    parser.add_argument(
+        "--allow-mock-fallback",
+        action="store_true",
+        help="Permit deterministic mock fallback when live tool configuration is unavailable.",
+    )
+    args = parser.parse_args(argv)
+    bundle_dir = generate_review_bundle(config_path=args.config, allow_mock_fallback=args.allow_mock_fallback)
     print(bundle_dir)
     return 0
 

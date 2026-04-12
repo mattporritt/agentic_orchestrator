@@ -7,13 +7,13 @@ import agentic_orchestrator.cli as cli
 
 def test_cli_json_mode(monkeypatch, capsys) -> None:
     class FakeService:
-        def query(self, *, query: str, context: dict | None = None) -> dict:
+        def query(self, *, query: str, context: dict | None = None, route_mode: str = "task", manual_tools: list[str] | None = None) -> dict:
             return {
                 "tool": "agentic_orchestrator",
                 "version": "v1",
                 "query": query,
                 "normalized_query": query.lower(),
-                "intent": {},
+                "intent": {"route_mode": route_mode, "manual_tools": manual_tools or []},
                 "results": [
                     {
                         "id": "1",
@@ -37,21 +37,22 @@ def test_cli_json_mode(monkeypatch, capsys) -> None:
             }
 
     monkeypatch.setattr(cli.OrchestratorService, "from_config", classmethod(lambda cls, config: FakeService()))
-    rc = cli.main(["query", "add admin settings to a plugin", "--json"])
+    rc = cli.main(["query", "add admin settings to a plugin", "--json", "--route-mode", "manual", "--tools", "docs,code"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["tool"] == "agentic_orchestrator"
+    assert payload["intent"]["route_mode"] == "manual"
+    assert payload["intent"]["manual_tools"] == ["agentic_devdocs", "agentic_indexer"]
 
 
 def test_cli_plain_mode(monkeypatch, capsys) -> None:
     class FakeService:
-        def query(self, *, query: str, context: dict | None = None) -> dict:
+        def query(self, *, query: str, context: dict | None = None, route_mode: str = "task", manual_tools: list[str] | None = None) -> dict:
             return {
                 "tool": "agentic_orchestrator",
                 "version": "v1",
                 "query": query,
                 "normalized_query": query.lower(),
-                "intent": {},
+                "intent": {"route_mode": route_mode, "manual_tools": manual_tools or []},
                 "results": [
                     {
                         "id": "1",
@@ -85,4 +86,5 @@ def test_cli_plain_mode(monkeypatch, capsys) -> None:
     assert rc == 0
     output = capsys.readouterr().out
     assert "Combined context" in output
+    assert "Route mode: task" in output
     assert "agentic_indexer" in output

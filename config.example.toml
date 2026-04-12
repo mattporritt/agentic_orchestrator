@@ -1,9 +1,18 @@
-[tools]
-devdocs_cmd = "agentic-docs"
-indexer_cmd = "moodle-indexer"
-sitemap_cmd = "moodle-sitemap"
+[tools.devdocs]
+command = "/Users/you/projects/agentic_devdocs/.venv/bin/python"
+workdir = "/Users/you/projects/agentic_devdocs"
+extra_args = ["-m", "agentic_docs.cli"]
+env = { PYTHONPATH = "/Users/you/projects/agentic_devdocs/src:/Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages" }
+
+[tools.indexer]
+command = "/Users/you/projects/agentic_indexer/.venv/bin/moodle-indexer"
+workdir = "/Users/you/projects/agentic_indexer"
+
+[tools.sitemap]
+command = "/Users/you/projects/agentic_sitemap/.venv/bin/moodle-sitemap"
+workdir = "/Users/you/projects/agentic_sitemap"
 
 [resources]
-devdocs_db_path = "/absolute/path/to/devdocs.sqlite"
-indexer_db_path = "/absolute/path/to/index.sqlite"
-sitemap_run_dir = "/absolute/path/to/sitemap-run"
+devdocs_db_path = "/Users/you/projects/agentic_devdocs/_smoke_test/agentic-docs.db"
+indexer_db_path = "/Users/you/projects/agentic_indexer/.db/moodle-index.sqlite"
+sitemap_run_dir = "/Users/you/projects/agentic_sitemap/discovery-runs/2026-04-09T025735Z"

@@ -8,6 +8,7 @@ from typing import Any
 from agentic_orchestrator.adapters import AdapterSet, ToolCallRecord, tool_call_record
 from agentic_orchestrator.config import OrchestratorConfig
 from agentic_orchestrator.contract import build_orchestrator_envelope
+from agentic_orchestrator.errors import ConfigurationError, ToolExecutionError
 from agentic_orchestrator.routing import RoutingDecision, ToolRequest, route_query
 
 
@@ -22,16 +23,28 @@ class OrchestratorService:
     def from_config(cls, config: OrchestratorConfig, runner=None) -> "OrchestratorService":
         return cls(config=config, adapters=AdapterSet.from_config(config, runner=runner))
 
-    def query(self, *, query: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        decision = route_query(query, context=context)
+    def query(
+        self,
+        *,
+        query: str,
+        context: dict[str, Any] | None = None,
+        route_mode: str = "task",
+        manual_tools: list[str] | None = None,
+    ) -> dict[str, Any]:
+        decision = route_query(query, context=context, route_mode=route_mode, manual_tools=manual_tools)
         docs_payload: dict[str, Any] | None = None
         code_payload: dict[str, Any] | None = None
         site_payload: dict[str, Any] | None = None
         records: list[ToolCallRecord] = []
+        failures: list[dict[str, str]] = []
 
         for request in decision.tools:
             records.append(tool_call_record(self.config, request))
-            payload = self._run_request(request)
+            try:
+                payload = self._run_request(request)
+            except (ConfigurationError, ToolExecutionError) as exc:
+                failures.append({"tool": request.tool_name, "mode": request.mode, "error": str(exc)})
+                continue
             if request.tool_name == "agentic_devdocs":
                 docs_payload = payload
             elif request.tool_name == "agentic_indexer":
@@ -39,10 +52,14 @@ class OrchestratorService:
             elif request.tool_name == "agentic_sitemap":
                 site_payload = payload
 
+        if not any((docs_payload, code_payload, site_payload)) and failures:
+            messages = "; ".join(f"{item['tool']}: {item['error']}" for item in failures)
+            raise ToolExecutionError(f"No tool calls succeeded. {messages}")
+
         docs_results = list((docs_payload or {}).get("results", []))
         code_results = list((code_payload or {}).get("results", []))
         site_results = list((site_payload or {}).get("results", []))
-        notes = self._build_notes(decision, docs_payload, code_payload, site_payload)
+        notes = self._build_notes(decision, docs_payload, code_payload, site_payload, failures)
         summary = self._build_summary(docs_results, code_results, site_results)
         next_steps = self._build_next_steps(docs_results, code_results, site_results)
         intent = self._build_intent(decision)
@@ -57,7 +74,7 @@ class OrchestratorService:
             tools_called=tools_called,
             suggested_next_steps=next_steps,
             summary=summary,
-            notes=notes,
+            notes=notes + [f"tool_failure: {item['tool']} {item['mode']} {item['error']}" for item in failures],
         )
 
     def _run_request(self, request: ToolRequest) -> dict[str, Any]:
@@ -71,11 +88,13 @@ class OrchestratorService:
 
     def _build_intent(self, decision: RoutingDecision) -> dict[str, Any]:
         return {
+            "route_mode": decision.route_mode,
             "task_type": decision.task_type,
             "component_hint": decision.component_hint,
             "source_preferences": decision.source_preferences,
             "tools_considered": [request.tool_name for request in decision.tools],
             "routing_notes": decision.routing_notes,
+            "manual_tools": decision.manual_tools,
         }
 
     def _build_notes(
@@ -84,8 +103,9 @@ class OrchestratorService:
         docs_payload: dict[str, Any] | None,
         code_payload: dict[str, Any] | None,
         site_payload: dict[str, Any] | None,
+        failures: list[dict[str, str]],
     ) -> list[str]:
-        notes = [f"routed task type: {decision.task_type}"]
+        notes = [f"routed task type: {decision.task_type}", f"route mode: {decision.route_mode}"]
         for tool_name, payload in (
             ("agentic_devdocs", docs_payload),
             ("agentic_indexer", code_payload),
@@ -94,6 +114,8 @@ class OrchestratorService:
             if payload is None:
                 continue
             notes.append(f"{tool_name} returned {len(payload.get('results', []))} result(s)")
+        if failures:
+            notes.append(f"tool failures: {len(failures)}")
         return notes
 
     def _build_summary(
@@ -184,4 +206,5 @@ class OrchestratorService:
             "mode": item.mode,
             "reason": item.reason,
             "command": item.command,
+            "workdir": item.workdir,
         }
