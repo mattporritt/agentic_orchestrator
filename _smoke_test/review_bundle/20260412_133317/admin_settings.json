@@ -1,0 +1,164 @@
+{
+  "intent": {
+    "component_hint": null,
+    "routing_notes": [
+      "task_type=admin_settings",
+      "docs-oriented evidence for admin_settings",
+      "code-oriented evidence for admin_settings"
+    ],
+    "source_preferences": [
+      "docs",
+      "code"
+    ],
+    "task_type": "admin_settings",
+    "tools_considered": [
+      "agentic_devdocs",
+      "agentic_indexer"
+    ]
+  },
+  "normalized_query": "add admin settings to a plugin",
+  "query": "add admin settings to a plugin",
+  "results": [
+    {
+      "confidence": "high",
+      "content": {
+        "code_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file": "admin/tool/demo/settings.php",
+              "path": "admin/tool/demo/settings.php",
+              "summary": "Primary code artifact for settings.",
+              "symbol": "tool_demo\\settings"
+            },
+            "diagnostics": {
+              "matched_via": "mock",
+              "selection_strategy": "mock",
+              "usage_count": 0
+            },
+            "id": "code-settings",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "codebase",
+              "path": "admin/tool/demo/settings.php",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "context_bundle"
+          }
+        ],
+        "docs_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file_anchors": [
+                "settings.php",
+                "admin/settings.php"
+              ],
+              "key_points": [
+                "Read the settings guidance first."
+              ],
+              "sections": [],
+              "summary": "Reference docs for settings."
+            },
+            "diagnostics": {
+              "ranking_explanation": "mock",
+              "selection_strategy": "mock",
+              "support_reason": null,
+              "token_count": 0
+            },
+            "id": "docs-settings",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "moodledevdocs",
+              "path": "docs/settings.md",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "knowledge_bundle"
+          }
+        ],
+        "site_results": [],
+        "suggested_next_steps": [
+          {
+            "kind": "read_doc",
+            "source_tool": "agentic_devdocs",
+            "value": "docs/settings.md"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "settings.php"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "admin/settings.php"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_indexer",
+            "value": "admin/tool/demo/settings.php"
+          },
+          {
+            "kind": "inspect_symbol",
+            "source_tool": "agentic_indexer",
+            "value": "tool_demo\\settings"
+          }
+        ],
+        "summary": "Combined context from 2 tool(s) (docs=1, code=1, site=0). Top signals: Reference docs for settings. | Primary code artifact for settings."
+      },
+      "diagnostics": {
+        "notes": [
+          "routed task type: admin_settings",
+          "agentic_devdocs returned 1 result(s)",
+          "agentic_indexer returned 1 result(s)"
+        ],
+        "selection_strategy": "rule_based_routing_plus_grouped_merge",
+        "tools_called": [
+          {
+            "command": [
+              "mock-devdocs",
+              "query"
+            ],
+            "mode": "query",
+            "reason": "docs-oriented evidence for admin_settings",
+            "tool": "agentic_devdocs"
+          },
+          {
+            "command": [
+              "mock-indexer",
+              "build-context-bundle"
+            ],
+            "mode": "build-context-bundle",
+            "reason": "code-oriented evidence for admin_settings",
+            "tool": "agentic_indexer"
+          }
+        ]
+      },
+      "id": "0b7e92eb99208bc3",
+      "rank": 1,
+      "source": {
+        "canonical_url": null,
+        "document_title": null,
+        "heading_path": [],
+        "name": "orchestrator",
+        "path": null,
+        "section_title": null,
+        "type": "multi_tool_runtime",
+        "url": null
+      },
+      "type": "orchestrated_context"
+    }
+  ],
+  "tool": "agentic_orchestrator",
+  "version": "v1"
+}

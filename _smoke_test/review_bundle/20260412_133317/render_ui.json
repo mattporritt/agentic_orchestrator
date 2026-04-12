@@ -1,0 +1,209 @@
+{
+  "intent": {
+    "component_hint": null,
+    "routing_notes": [
+      "task_type=render_ui",
+      "docs-oriented evidence for render_ui",
+      "code-oriented evidence for render_ui",
+      "explicit site lookup context supplied"
+    ],
+    "source_preferences": [
+      "docs",
+      "code",
+      "site"
+    ],
+    "task_type": "render_ui",
+    "tools_considered": [
+      "agentic_devdocs",
+      "agentic_indexer",
+      "agentic_sitemap"
+    ]
+  },
+  "normalized_query": "how should this render in moodle?",
+  "query": "How should this render in Moodle?",
+  "results": [
+    {
+      "confidence": "high",
+      "content": {
+        "code_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file": "mod/forum/renderer.php",
+              "path": "mod/forum/renderer.php",
+              "summary": "Primary code artifact for render.",
+              "symbol": "mod_forum\\output\\renderer"
+            },
+            "diagnostics": {
+              "matched_via": "mock",
+              "selection_strategy": "mock",
+              "usage_count": 0
+            },
+            "id": "code-render",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "codebase",
+              "path": "mod/forum/renderer.php",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "context_bundle"
+          }
+        ],
+        "docs_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file_anchors": [
+                "classes/output/renderer.php",
+                "templates/example.mustache"
+              ],
+              "key_points": [
+                "Read the render guidance first."
+              ],
+              "sections": [],
+              "summary": "Reference docs for render."
+            },
+            "diagnostics": {
+              "ranking_explanation": "mock",
+              "selection_strategy": "mock",
+              "support_reason": null,
+              "token_count": 0
+            },
+            "id": "docs-render",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "moodledevdocs",
+              "path": "docs/render.md",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "knowledge_bundle"
+          }
+        ],
+        "site_results": [
+          {
+            "confidence": "medium",
+            "content": {
+              "page_type": "course",
+              "summary": "Representative Moodle page context for render inspection."
+            },
+            "diagnostics": {
+              "ranking_explanation": "mock",
+              "selection_strategy": "mock",
+              "support_reason": "mock",
+              "token_count": 0
+            },
+            "id": "site-render",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "moodle_site",
+              "path": "/course/view.php",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "page_context"
+          }
+        ],
+        "suggested_next_steps": [
+          {
+            "kind": "read_doc",
+            "source_tool": "agentic_devdocs",
+            "value": "docs/render.md"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "classes/output/renderer.php"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "templates/example.mustache"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_indexer",
+            "value": "mod/forum/renderer.php"
+          },
+          {
+            "kind": "inspect_symbol",
+            "source_tool": "agentic_indexer",
+            "value": "mod_forum\\output\\renderer"
+          },
+          {
+            "kind": "inspect_page_type",
+            "source_tool": "agentic_sitemap",
+            "value": "course"
+          }
+        ],
+        "summary": "Combined context from 3 tool(s) (docs=1, code=1, site=1). Top signals: Reference docs for render. | Primary code artifact for render. | Representative Moodle page context for render inspection."
+      },
+      "diagnostics": {
+        "notes": [
+          "routed task type: render_ui",
+          "agentic_devdocs returned 1 result(s)",
+          "agentic_indexer returned 1 result(s)",
+          "agentic_sitemap returned 1 result(s)"
+        ],
+        "selection_strategy": "rule_based_routing_plus_grouped_merge",
+        "tools_called": [
+          {
+            "command": [
+              "mock-devdocs",
+              "query"
+            ],
+            "mode": "query",
+            "reason": "docs-oriented evidence for render_ui",
+            "tool": "agentic_devdocs"
+          },
+          {
+            "command": [
+              "mock-indexer",
+              "build-context-bundle"
+            ],
+            "mode": "build-context-bundle",
+            "reason": "code-oriented evidence for render_ui",
+            "tool": "agentic_indexer"
+          },
+          {
+            "command": [
+              "mock-sitemap",
+              "runtime-query"
+            ],
+            "mode": "runtime-query",
+            "reason": "explicit site lookup context supplied",
+            "tool": "agentic_sitemap"
+          }
+        ]
+      },
+      "id": "9bb59573ba50206f",
+      "rank": 1,
+      "source": {
+        "canonical_url": null,
+        "document_title": null,
+        "heading_path": [],
+        "name": "orchestrator",
+        "path": null,
+        "section_title": null,
+        "type": "multi_tool_runtime",
+        "url": null
+      },
+      "type": "orchestrated_context"
+    }
+  ],
+  "tool": "agentic_orchestrator",
+  "version": "v1"
+}

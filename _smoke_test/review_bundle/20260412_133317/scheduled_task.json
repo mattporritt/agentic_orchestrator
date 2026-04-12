@@ -1,0 +1,164 @@
+{
+  "intent": {
+    "component_hint": null,
+    "routing_notes": [
+      "task_type=scheduled_task",
+      "docs-oriented evidence for scheduled_task",
+      "code-oriented evidence for scheduled_task"
+    ],
+    "source_preferences": [
+      "docs",
+      "code"
+    ],
+    "task_type": "scheduled_task",
+    "tools_considered": [
+      "agentic_devdocs",
+      "agentic_indexer"
+    ]
+  },
+  "normalized_query": "register a scheduled task",
+  "query": "register a scheduled task",
+  "results": [
+    {
+      "confidence": "high",
+      "content": {
+        "code_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file": "mod/forum/db/tasks.php",
+              "path": "mod/forum/db/tasks.php",
+              "summary": "Primary code artifact for scheduled task.",
+              "symbol": "mod_forum\\task\\cleanup_task"
+            },
+            "diagnostics": {
+              "matched_via": "mock",
+              "selection_strategy": "mock",
+              "usage_count": 0
+            },
+            "id": "code-scheduled task",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "codebase",
+              "path": "mod/forum/db/tasks.php",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "context_bundle"
+          }
+        ],
+        "docs_results": [
+          {
+            "confidence": "high",
+            "content": {
+              "file_anchors": [
+                "db/tasks.php",
+                "classes/task"
+              ],
+              "key_points": [
+                "Read the scheduled task guidance first."
+              ],
+              "sections": [],
+              "summary": "Reference docs for scheduled task."
+            },
+            "diagnostics": {
+              "ranking_explanation": "mock",
+              "selection_strategy": "mock",
+              "support_reason": null,
+              "token_count": 0
+            },
+            "id": "docs-scheduled task",
+            "rank": 1,
+            "source": {
+              "canonical_url": null,
+              "document_title": null,
+              "heading_path": [],
+              "name": "moodledevdocs",
+              "path": "docs/scheduled_task.md",
+              "section_title": null,
+              "type": "mock_runtime",
+              "url": null
+            },
+            "type": "knowledge_bundle"
+          }
+        ],
+        "site_results": [],
+        "suggested_next_steps": [
+          {
+            "kind": "read_doc",
+            "source_tool": "agentic_devdocs",
+            "value": "docs/scheduled_task.md"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "db/tasks.php"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_devdocs",
+            "value": "classes/task"
+          },
+          {
+            "kind": "inspect_file",
+            "source_tool": "agentic_indexer",
+            "value": "mod/forum/db/tasks.php"
+          },
+          {
+            "kind": "inspect_symbol",
+            "source_tool": "agentic_indexer",
+            "value": "mod_forum\\task\\cleanup_task"
+          }
+        ],
+        "summary": "Combined context from 2 tool(s) (docs=1, code=1, site=0). Top signals: Reference docs for scheduled task. | Primary code artifact for scheduled task."
+      },
+      "diagnostics": {
+        "notes": [
+          "routed task type: scheduled_task",
+          "agentic_devdocs returned 1 result(s)",
+          "agentic_indexer returned 1 result(s)"
+        ],
+        "selection_strategy": "rule_based_routing_plus_grouped_merge",
+        "tools_called": [
+          {
+            "command": [
+              "mock-devdocs",
+              "query"
+            ],
+            "mode": "query",
+            "reason": "docs-oriented evidence for scheduled_task",
+            "tool": "agentic_devdocs"
+          },
+          {
+            "command": [
+              "mock-indexer",
+              "build-context-bundle"
+            ],
+            "mode": "build-context-bundle",
+            "reason": "code-oriented evidence for scheduled_task",
+            "tool": "agentic_indexer"
+          }
+        ]
+      },
+      "id": "40ad6e2b8a40b720",
+      "rank": 1,
+      "source": {
+        "canonical_url": null,
+        "document_title": null,
+        "heading_path": [],
+        "name": "orchestrator",
+        "path": null,
+        "section_title": null,
+        "type": "multi_tool_runtime",
+        "url": null
+      },
+      "type": "orchestrated_context"
+    }
+  ],
+  "tool": "agentic_orchestrator",
+  "version": "v1"
+}
