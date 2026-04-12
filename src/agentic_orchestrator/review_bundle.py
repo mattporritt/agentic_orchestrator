@@ -1,4 +1,4 @@
-"""Generate a routing-focused review artifact bundle for the thin prototype."""
+"""Generate review artifacts for routing and task-level context usefulness."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from agentic_orchestrator.routing_eval import (
     load_routing_eval_cases,
     render_routing_eval_text,
 )
+from agentic_orchestrator.task_eval import evaluate_task_outputs, load_task_eval_cases, render_task_eval_text
 
 
 @dataclass(frozen=True)
@@ -202,95 +203,106 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     runtime = build_review_runtime(config_path=config_path, allow_mock_fallback=allow_mock_fallback)
     service = runtime.service
     config = runtime.config
-    cases = load_routing_eval_cases()
-    evaluation = evaluate_auto_routing(service, cases=cases)
-    comparison_cases = [case for case in cases if case.compare_modes]
+    routing_cases = load_routing_eval_cases()
+    routing_evaluation = evaluate_auto_routing(service, cases=routing_cases)
+    comparison_cases = [case for case in routing_cases if case.compare_modes]
     comparisons = [compare_modes_for_case(case) for case in comparison_cases]
+    task_cases = load_task_eval_cases()
+    task_evaluation = evaluate_task_outputs(service, cases=task_cases)
 
-    for case_result in evaluation["cases"]:
+    for case_result in routing_evaluation["cases"]:
         slug = case_result["case_id"]
         (examples_dir / f"{slug}.auto.json").write_text(
             json.dumps(case_result["payload"], indent=2, sort_keys=True),
             encoding="utf-8",
         )
 
+    for case_result in task_evaluation["cases"]:
+        slug = case_result["case_id"]
+        (examples_dir / f"{slug}.task-context.json").write_text(
+            json.dumps(case_result["payload"], indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+
     for comparison in comparisons:
-        case = next(item for item in cases if item.id == comparison["case_id"])
+        case = next(item for item in routing_cases if item.id == comparison["case_id"])
         task_payload = service.query(query=case.query, context=case.context, route_mode="task")
         manual_payload = service.query(query=case.query, context=case.context, route_mode="manual", manual_tools=case.preferred_tools)
         (examples_dir / f"{case.id}.task.json").write_text(json.dumps(task_payload, indent=2, sort_keys=True), encoding="utf-8")
         (examples_dir / f"{case.id}.manual.json").write_text(json.dumps(manual_payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    (bundle_dir / "routing_eval.json").write_text(json.dumps(_serializable_eval(evaluation), indent=2, sort_keys=True), encoding="utf-8")
-    (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(_serializable_eval(evaluation)), encoding="utf-8")
+    (bundle_dir / "routing_eval.json").write_text(json.dumps(_serializable_eval(routing_evaluation), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(_serializable_eval(routing_evaluation)), encoding="utf-8")
+    (bundle_dir / "task_eval.json").write_text(json.dumps(_serializable_task_eval(task_evaluation), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "task_eval.txt").write_text(render_task_eval_text(_serializable_task_eval(task_evaluation)), encoding="utf-8")
     (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "mode_comparison.md").write_text(_render_mode_comparison_markdown(comparisons), encoding="utf-8")
     (bundle_dir / "config-used.json").write_text(json.dumps(_sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
 
+    task_weak_cases = [case for case in task_evaluation["cases"] if case["status"] != "COMPLETE"]
     summary_lines = [
-        "# Routing Review Summary",
+        "# Task Review Summary",
         "",
         "## Runtime Mode",
         "",
         f"- Review bundle execution mode: `{runtime.execution_mode}`",
         f"- Config path: `{config_path or config.config_path or '(none)'}`",
         "",
-        "## Evaluation Slice",
+        "## Task Evaluation Slice",
         "",
-        f"- Routing cases evaluated: {len(evaluation['cases'])}",
-        "- Focus: broader `auto` routing for docs, code, render/UI, file-location, debugging, ambiguous, and site/workflow queries",
+        f"- Task cases evaluated: {len(task_evaluation['cases'])}",
+        "- Focus: whether the merged orchestrator output is complete, too thin, or too noisy for representative Moodle development tasks",
         "",
-        "## Auto Routing Changes",
+        "## Task Usefulness Semantics",
         "",
-        "- Broadened `auto` with explicit conceptual, implementation, file-location, render, workflow, and site-context signals",
-        "- Reduced eager sitemap use for generic render questions without page/workflow context",
-        "- Improved mixed docs+code routing for service wiring, Behat placement, and implementation-requirement queries",
-        "- Kept `task` and `manual` behavior intact",
+        "- `COMPLETE`: merged context included the expected tool contributions and required task signals",
+        "- `PARTIAL`: merged context was usable but still thin, noisy, or missing one key task signal",
+        "- `INSUFFICIENT`: merged context was missing expected tools or too many required task signals",
         "",
-        "## Routing Status Semantics",
+        "## Assembly Changes",
         "",
-        "- `CORRECT`: selected tools exactly matched the preferred set",
-        "- `ACCEPTABLE`: selected tools matched an explicitly acceptable set",
-        "- `OVERCALLED`: selected tools formed a useful superset but included an unnecessary extra tool",
-        "- `UNDERCALLED`: selected tools omitted a tool expected for the case",
-        "- `WRONG`: selected tools did not match any useful expected routing pattern",
+        "- Promoted compact `key_signals` so the best doc, code, and site evidence is visible without flattening tool boundaries",
+        "- Improved `suggested_next_steps` to extract nested code paths and symbols from indexer bundles instead of only top-level fields",
+        "- Filtered noisy external or relative-path anchors from promoted evidence so next steps stay more actionable",
+        "- Kept grouped `docs_results`, `code_results`, and `site_results` intact underneath the promoted evidence",
         "",
-        "## Results",
+        "## Task Results",
         "",
-        f"- correct: {evaluation['summary']['CORRECT']}",
-        f"- acceptable: {evaluation['summary']['ACCEPTABLE']}",
-        f"- overcalled: {evaluation['summary']['OVERCALLED']}",
-        f"- undercalled: {evaluation['summary']['UNDERCALLED']}",
-        f"- wrong: {evaluation['summary']['WRONG']}",
+        f"- complete: {task_evaluation['summary']['COMPLETE']}",
+        f"- partial: {task_evaluation['summary']['PARTIAL']}",
+        f"- insufficient: {task_evaluation['summary']['INSUFFICIENT']}",
         "",
-        "## By Query Style",
+        "## Representative Task Cases",
         "",
     ]
-    for style, counts in sorted(evaluation["by_query_style"].items()):
+    for case in task_evaluation["cases"]:
         summary_lines.append(
-            f"- `{style}`: "
-            + ", ".join(
-                f"{key.lower()}={counts[key]}"
-                for key in ("CORRECT", "ACCEPTABLE", "OVERCALLED", "UNDERCALLED", "WRONG")
-                if counts[key] > 0
-            )
+            f"- `{case['case_id']}`: {case['status']} -> tools={', '.join(case['selected_tools'])}; present={', '.join(case['key_signals_present']) or '(none)'}"
         )
-    summary_lines.extend(["", "## Representative Cases", ""])
-    for case in evaluation["cases"][:6]:
-        summary_lines.append(f"- `{case['case_id']}` [{case['query_style']}]: {case['status']} -> {', '.join(case['selected_tools'])}")
-    weak_cases = [case for case in evaluation["cases"] if case["status"] != "CORRECT"]
-    if weak_cases:
-        summary_lines.extend(["", "## Newly Exposed Weak Cases", ""])
-        for case in weak_cases[:10]:
-            summary_lines.append(f"- `{case['case_id']}` [{case['query_style']}]: {case['status']} -> {case['reason']}")
+    if task_weak_cases:
+        summary_lines.extend(["", "## Thin / Missing / Noisy Cases", ""])
+        for case in task_weak_cases:
+            line = f"- `{case['case_id']}`: {case['status']}"
+            if case["missing_signals"]:
+                line += f"; missing={', '.join(case['missing_signals'])}"
+            if case["thinness_flags"]:
+                line += f"; thinness={', '.join(case['thinness_flags'])}"
+            if case["noise_flags"]:
+                line += f"; noise={', '.join(case['noise_flags'])}"
+            summary_lines.append(line)
     summary_lines.extend(
         [
             "",
+            "## Routing Stability",
+            "",
+            f"- current routing baseline: correct={routing_evaluation['summary']['CORRECT']}, acceptable={routing_evaluation['summary']['ACCEPTABLE']}, overcalled={routing_evaluation['summary']['OVERCALLED']}, undercalled={routing_evaluation['summary']['UNDERCALLED']}, wrong={routing_evaluation['summary']['WRONG']}",
+            "- This phase did not intentionally broaden routing; the main changes were in assembly and promoted evidence",
+            "",
             "## Remaining Limitations",
             "",
-            "- `auto` remains rule-based and this broader eval is expected to expose more misses and borderline cases over time",
-            "- Routing evaluation grades tool-set choice only, not retrieval quality within each sibling tool",
-            "- Ambiguous debugging and workflow phrasing are still the most likely weak areas",
+            "- Task evaluation still grades deterministic signal coverage rather than semantic answer quality",
+            "- Some sibling-tool results remain inherently thin, especially when indexer free-text bundles do not return a strong primary context",
+            "- The orchestrator still assembles evidence; it does not plan edits or decide implementation steps",
             "",
             "## Tool Paths Used",
             "",
@@ -303,7 +315,7 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     summary_lines.extend(
         [
             "",
-            f"Routing review artifact bundle path: {bundle_dir}",
+            f"Task review artifact bundle path: {bundle_dir}",
         ]
     )
     (bundle_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
@@ -329,6 +341,30 @@ def _serializable_eval(evaluation: dict[str, object]) -> dict[str, object]:
                 "selected_tools": case["selected_tools"],
                 "status": case["status"],
                 "reason": case["reason"],
+                "notes": case["notes"],
+            }
+            for case in evaluation["cases"]
+        ],
+    }
+
+
+def _serializable_task_eval(evaluation: dict[str, object]) -> dict[str, object]:
+    return {
+        "summary": evaluation["summary"],
+        "cases": [
+            {
+                "case_id": case["case_id"],
+                "query": case["query"],
+                "route_mode": case["route_mode"],
+                "expected_tools": case["expected_tools"],
+                "selected_tools": case["selected_tools"],
+                "status": case["status"],
+                "reason": case["reason"],
+                "key_signals_present": case["key_signals_present"],
+                "missing_signals": case["missing_signals"],
+                "thinness_flags": case["thinness_flags"],
+                "noise_flags": case["noise_flags"],
+                "assembly_notes": case["assembly_notes"],
                 "notes": case["notes"],
             }
             for case in evaluation["cases"]

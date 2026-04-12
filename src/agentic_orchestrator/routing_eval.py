@@ -94,6 +94,8 @@ def evaluate_auto_routing(
         payload["results"][0]["diagnostics"]["routing_eval_reason"] = grade["reason"]
         payload["results"][0]["diagnostics"]["routing_eval_case_id"] = case.id
         payload["results"][0]["diagnostics"]["routing_eval_query_style"] = case.query_style
+        payload["results"][0]["diagnostics"]["routing_eval_preferred_tools"] = case.preferred_tools
+        payload["results"][0]["diagnostics"]["routing_eval_acceptable_tool_sets"] = case.acceptable_tool_sets
         counts[grade["status"]] += 1
         style_counts = by_style.setdefault(case.query_style, {status: 0 for status in ROUTING_STATUSES})
         style_counts[grade["status"]] += 1

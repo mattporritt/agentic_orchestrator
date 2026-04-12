@@ -132,6 +132,7 @@ def build_orchestrator_envelope(
     docs_results: list[dict[str, Any]],
     code_results: list[dict[str, Any]],
     site_results: list[dict[str, Any]],
+    key_signals: list[dict[str, Any]],
     tools_called: list[dict[str, Any]],
     suggested_next_steps: list[dict[str, Any]],
     summary: str,
@@ -143,6 +144,7 @@ def build_orchestrator_envelope(
         "docs_results": docs_results,
         "code_results": code_results,
         "site_results": site_results,
+        "key_signals": key_signals,
         "suggested_next_steps": suggested_next_steps,
         "summary": summary,
     }

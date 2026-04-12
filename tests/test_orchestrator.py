@@ -138,11 +138,15 @@ def test_orchestrator_merges_grouped_results_and_preserves_tool_boundaries() -> 
     assert len(result["content"]["docs_results"]) == 1
     assert len(result["content"]["code_results"]) == 1
     assert result["content"]["site_results"] == []
+    assert result["content"]["key_signals"]
+    assert result["content"]["key_signals"][0]["source_tool"] == "agentic_devdocs"
     assert payload["intent"]["route_mode"] == "task"
     assert result["diagnostics"]["tools_called"][0]["tool"] == "agentic_devdocs"
     assert result["diagnostics"]["route_mode"] == "task"
     assert "selected_tools" in result["diagnostics"]
     assert "routing_reasons" in result["diagnostics"]
+    assert "matched_route_signals" in result["diagnostics"]
+    assert "assembly_notes" in result["diagnostics"]
 
 
 def test_orchestrator_manual_mode_uses_requested_tools() -> None:
@@ -172,3 +176,11 @@ def test_orchestrator_auto_mode_uses_broader_routing_rules() -> None:
     payload = service.query(query="Where do Behat feature files go?", route_mode="auto")
     called = [item["tool"] for item in payload["results"][0]["diagnostics"]["tools_called"]]
     assert called == ["agentic_devdocs", "agentic_indexer"]
+
+
+def test_orchestrator_filters_noisy_external_doc_anchors_from_promoted_evidence() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(query="add admin settings to a plugin", route_mode="task")
+    values = [item["value"] for item in payload["results"][0]["content"]["suggested_next_steps"]]
+    assert all("://" not in value for value in values)
+    assert all(not value.startswith("//") for value in values)

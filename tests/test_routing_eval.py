@@ -5,11 +5,14 @@ from pathlib import Path
 
 from agentic_orchestrator.routing_eval import (
     RoutingEvalCase,
+    evaluate_auto_routing,
     compare_modes_for_case,
     grade_routing_case,
     load_routing_eval_cases,
     render_routing_eval_text,
 )
+from agentic_orchestrator.orchestrator import OrchestratorService
+from tests.test_orchestrator import _config, _runner
 
 
 def test_load_routing_eval_cases_from_fixture(tmp_path: Path) -> None:
@@ -101,3 +104,24 @@ def test_render_routing_eval_text_includes_style_breakdown() -> None:
     assert "By query style:" in text
     assert "debugging: correct=1" in text
     assert "[debugging]" in text
+
+
+def test_evaluate_auto_routing_exposes_eval_expectations_in_diagnostics() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    case = RoutingEvalCase(
+        id="navigation_path_messy",
+        query="How do I make sense of this navigation path in Moodle?",
+        query_style="workflow",
+        preferred_tools=["agentic_sitemap"],
+        acceptable_tool_sets=[["agentic_devdocs", "agentic_sitemap"]],
+        disallowed_tools=["agentic_indexer"],
+        notes=[],
+        context={},
+    )
+    evaluation = evaluate_auto_routing(service, cases=[case])
+    result = evaluation["cases"][0]
+    diagnostics = result["payload"]["results"][0]["diagnostics"]
+    assert result["status"] == "CORRECT"
+    assert diagnostics["routing_eval_preferred_tools"] == ["agentic_sitemap"]
+    assert diagnostics["routing_eval_acceptable_tool_sets"] == [["agentic_devdocs", "agentic_sitemap"]]
+    assert diagnostics["routing_eval_status"] == "CORRECT"

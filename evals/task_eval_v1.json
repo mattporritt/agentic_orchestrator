@@ -1,0 +1,67 @@
+{
+  "version": "v1",
+  "cases": [
+    {
+      "id": "admin_settings_task",
+      "query": "add admin settings to a plugin",
+      "route_mode": "task",
+      "expected_tools": ["agentic_devdocs", "agentic_indexer"],
+      "required_signals": [
+        {"label": "admin docs path", "kind": "docs_path_contains", "value": "docs/apis/subsystems/admin/index.md"},
+        {"label": "settings file evidence", "kind": "path_contains", "value": "settings.php"},
+        {"label": "actionable settings next step", "kind": "next_step_contains", "value": "settings.php"}
+      ],
+      "notes": ["Admin settings should surface docs guidance and actionable file anchors."]
+    },
+    {
+      "id": "scheduled_task_task",
+      "query": "register a scheduled task",
+      "route_mode": "task",
+      "expected_tools": ["agentic_devdocs", "agentic_indexer"],
+      "required_signals": [
+        {"label": "scheduled task docs path", "kind": "docs_path_contains", "value": "docs/apis/subsystems/task/scheduled.md"},
+        {"label": "tasks php evidence", "kind": "path_contains", "value": "db/tasks.php"},
+        {"label": "actionable task next step", "kind": "next_step_contains", "value": "task"}
+      ],
+      "notes": ["Scheduled task context should point to registration files and example task classes."]
+    },
+    {
+      "id": "web_service_task",
+      "query": "define a web service",
+      "route_mode": "task",
+      "expected_tools": ["agentic_devdocs", "agentic_indexer"],
+      "required_signals": [
+        {"label": "web service docs path", "kind": "docs_path_contains", "value": "docs/apis/subsystems/external/writing-a-service.md"},
+        {"label": "services php evidence", "kind": "path_contains", "value": "db/services.php"},
+        {"label": "external implementation evidence", "kind": "path_contains", "value": "classes/external"},
+        {"label": "service registration next step", "kind": "next_step_contains", "value": "db/services.php"}
+      ],
+      "notes": ["Web service context should surface both implementation and registration companions."]
+    },
+    {
+      "id": "privacy_metadata_task",
+      "query": "add privacy metadata",
+      "route_mode": "task",
+      "expected_tools": ["agentic_devdocs", "agentic_indexer"],
+      "required_signals": [
+        {"label": "privacy docs path", "kind": "docs_path_contains", "value": "docs/apis/subsystems/privacy/index.md"},
+        {"label": "privacy provider evidence", "kind": "path_contains", "value": "classes/privacy/provider.php"},
+        {"label": "privacy next step", "kind": "next_step_contains", "value": "provider.php"}
+      ],
+      "notes": ["Privacy metadata should surface provider implementation paths prominently."]
+    },
+    {
+      "id": "render_task",
+      "query": "understand how something should render in Moodle",
+      "route_mode": "task",
+      "expected_tools": ["agentic_devdocs", "agentic_indexer", "agentic_sitemap"],
+      "required_signals": [
+        {"label": "output api docs path", "kind": "docs_path_contains", "value": "docs/apis/subsystems/output/index.md"},
+        {"label": "renderer evidence", "kind": "path_contains", "value": "renderer.php"},
+        {"label": "page type evidence", "kind": "site_page_type", "value": "dashboard"},
+        {"label": "render next step", "kind": "next_step_contains", "value": "renderer.php"}
+      ],
+      "notes": ["Render tasks should include docs, code-facing render cues, and site context."]
+    }
+  ]
+}

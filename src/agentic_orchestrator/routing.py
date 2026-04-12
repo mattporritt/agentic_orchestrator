@@ -218,7 +218,21 @@ def _analyze_auto_routing(query: str, normalized: str, context: dict[str, Any], 
     file_phrases = ("what file", "file contains", "where is", "feature files", "language strings", "settings.php", "services.php", "tasks.php")
     docs_topics = ("api", "docs", "documentation", "guide", "privacy", "scheduled task", "web service", "admin settings", "behat", "renderer", "rendering", "output")
     code_topics = ("plugin", "file", "symbol", "class", "function", "language strings", "behat", "service", "task", "settings", "privacy", "defined", "registered")
-    site_phrases = ("page type", "workflow", "navigate", "navigation", "screen", "page", "url", "dashboard", "course", "site context", "user preferences")
+    site_phrases = (
+        "page type",
+        "workflow",
+        "navigate",
+        "navigation",
+        "path",
+        "page flow",
+        "screen",
+        "page",
+        "url",
+        "dashboard",
+        "course",
+        "site context",
+        "user preferences",
+    )
     render_phrases = ("render", "rendering", "renderer", "template", "mustache", "ui pattern", "output")
 
     conceptual = any(phrase in normalized for phrase in conceptual_phrases)
@@ -266,9 +280,26 @@ def _analyze_auto_routing(query: str, normalized: str, context: dict[str, Any], 
         site = True
         reasons.append("page_type_lookup_is_site_oriented")
 
-    if site_topic and any(phrase in normalized for phrase in ("navigate", "workflow", "page type", "screen", "page")):
+    if site_topic and any(phrase in normalized for phrase in ("navigate", "navigation", "workflow", "path", "page flow", "page type", "screen", "page")):
         site = True
         reasons.append("workflow_or_page_context_signal")
+
+    if site and "behat" in normalized and any(phrase in normalized for phrase in ("page", "scenario")):
+        docs = True
+        reasons.append("behat_page_discovery_needs_docs_and_site")
+
+    if site and any(keyword in normalized for keyword in ("admin", "settings")) and any(
+        phrase in normalized for phrase in ("page", "path", "flow", "navigation", "workflow")
+    ):
+        docs = True
+        reasons.append("admin_or_settings_page_flow_needs_docs_and_site")
+
+    if any(keyword in normalized for keyword in ("service", "task", "privacy", "settings")) and any(
+        phrase in normalized for phrase in ("wire up", "wired up", "register", "registered", "defined")
+    ):
+        docs = True
+        code = True
+        reasons.append("subsystem_wiring_question_needs_docs_and_code")
 
     if render_topic and site_topic:
         docs = True

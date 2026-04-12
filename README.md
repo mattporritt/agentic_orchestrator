@@ -180,6 +180,12 @@ The broadened slice now includes harder, more natural Moodle-development wording
 - mixed docs+code questions like “where is this service actually wired up?”
 - intentionally ambiguous asks where more than one tool set can still be useful
 
+Recent `auto` refinements stayed narrow and explicit:
+
+- `navigation` / `path` / `page flow` wording now counts as workflow or site-context evidence
+- subsystem wiring phrases for `service`, `task`, `privacy`, and `settings` can promote `docs + code`
+- admin/settings page-flow and Behat page-discovery questions can promote `docs + site`
+
 Routing quality statuses are deterministic:
 
 - `CORRECT`: selected tools exactly matched the preferred set
@@ -201,6 +207,44 @@ This evaluation is about tool-set choice, not retrieval quality inside each sibl
 - `ambiguous`
 
 As the routing eval broadens, lower scores do not automatically mean the router regressed. They can also mean the benchmark is now covering more realistic and less neatly classifiable queries.
+
+## Task Evaluation
+
+Merged task-context usefulness is evaluated against an explicit fixture in [`evals/task_eval_v1.json`](/Users/mattp/projects/agentic_orchestrator/evals/task_eval_v1.json).
+
+The current slice covers a small set of real Moodle development tasks:
+
+- add admin settings to a plugin
+- register a scheduled task
+- define a web service
+- add privacy metadata
+- understand how something should render in Moodle
+
+Each case records:
+
+- `expected_tools`
+- `required_signals`
+- `notes`
+
+Task usefulness statuses are deterministic:
+
+- `COMPLETE`: merged context included the expected tool contributions and required task signals
+- `PARTIAL`: merged context was usable but still thin, noisy, or missing one key signal
+- `INSUFFICIENT`: merged context was missing expected tools or too many required task signals
+
+The task eval checks for concrete signals such as:
+
+- docs paths and sections
+- file anchors and code paths
+- symbols or implementation companions when present
+- site page type context for render/page tasks
+- deterministic, evidence-based `suggested_next_steps`
+
+Recent context-assembly improvements stayed small and explicit:
+
+- promoted compact `key_signals` alongside the grouped tool outputs
+- extracted actionable code paths from nested indexer bundles instead of only top-level fields
+- filtered noisy external or relative-path anchors from promoted evidence and next steps
 
 ## CLI
 
@@ -230,11 +274,11 @@ agentic-orchestrator query "How should this render in Moodle?" \
   --json
 ```
 
-## Routing Review Bundle
+## Review Bundle
 
-The review bundle now focuses on routing quality and prefers real sibling-tool execution when valid config is present.
+The review bundle now focuses on task-level context usefulness while still reporting routing stability. It prefers real sibling-tool execution when valid config is present.
 
-Generate a routing review bundle:
+Generate a live review bundle:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
@@ -246,26 +290,28 @@ Only allow deterministic mock fallback when you explicitly want it for testing:
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --allow-mock-fallback
 ```
 
-The routing review bundle includes:
+The review bundle includes:
 
 - `summary.md`
+- `task_eval.json`
+- `task_eval.txt`
 - `routing_eval.json`
 - `routing_eval.txt`
 - `mode_comparison.json`
 - `mode_comparison.md`
-- style-aware routing breakdowns inside the eval outputs
-- example orchestrator outputs
+- example orchestrator outputs for the selected task cases
 - `config-used.json`
 - `pytest.txt`
 - `git-status.txt`
 - `git-commit.txt`
 
 The summary explicitly states whether the review used `real_local_tools` or `mock_fallback`.
+It also reports whether each task context was `COMPLETE`, `PARTIAL`, or `INSUFFICIENT`, together with missing-signal and noise diagnostics.
 
 ## Current Limitations
 
 - `auto` remains rule-based and will still miss some edge-case phrasing
-- Routing evaluation grades tool-set choice only, not per-tool retrieval quality
+- Task evaluation grades deterministic signal coverage, not semantic answer quality
 - A broader routing eval can expose honest ambiguity or weakness without implying the sibling tools themselves failed
 - Generic low-signal questions still fall back to `docs + code`
 - The orchestrator remains a context assembler rather than a planner
