@@ -73,3 +73,17 @@ def test_task_routing_uses_explicit_symbol_context_for_definition_lookup() -> No
     indexer_request = next(tool for tool in decision.tools if tool.tool_name == "agentic_indexer")
     assert indexer_request.mode == "find-definition"
     assert indexer_request.symbol == "mod_forum\\external\\discussion_exporter"
+
+
+def test_task_routing_recognizes_render_symbol_query_as_code_anchor() -> None:
+    decision = route_query("mod_assign\\output\\grading_app", route_mode="task")
+    assert decision.task_type == "render_ui"
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_indexer"]
+    assert decision.tools[0].symbol == "mod_assign\\output\\grading_app"
+
+
+def test_task_routing_recognizes_render_file_query_as_code_anchor() -> None:
+    decision = route_query("mod/assign/locallib.php", route_mode="task")
+    assert decision.task_type == "render_ui"
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_indexer"]
+    assert decision.tools[0].file == "mod/assign/locallib.php"

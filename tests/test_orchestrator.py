@@ -11,6 +11,7 @@ from agentic_orchestrator.orchestrator import OrchestratorService
 
 def _payload(tool: str, query: str, file_value: str) -> dict:
     if tool == "agentic_docs":
+        render_like = "renderer" in file_value or "mustache" in file_value
         return {
             "tool": tool,
             "version": "v1",
@@ -26,13 +27,13 @@ def _payload(tool: str, query: str, file_value: str) -> dict:
                     "source": {
                         "name": "docs",
                         "type": "documentation",
-                        "url": None,
-                        "canonical_url": None,
-                        "path": "docs/example.md",
-                        "document_title": None,
-                        "section_title": None,
-                        "heading_path": [],
-                    },
+                    "url": None,
+                    "canonical_url": None,
+                    "path": "docs/example.md",
+                    "document_title": "Output API" if render_like else None,
+                    "section_title": "Renderable" if render_like else None,
+                    "heading_path": ["Page Output Journey", "Renderable"] if render_like else [],
+                },
                     "content": {"summary": "Docs summary", "file_anchors": [file_value]},
                     "diagnostics": {},
                 }
@@ -99,10 +100,19 @@ def _runner(*, args, text, capture_output, check, cwd=None, env=None):
     del text, capture_output, check, cwd, env
     tool_tag = args[1]
     if tool_tag == "mock-devdocs":
-        payload = _payload("agentic_docs", args[3], "settings.php")
+        anchor = "admin/tool/demo/classes/output/renderer.php" if "render" in args[3].lower() else "settings.php"
+        payload = _payload("agentic_docs", args[3], anchor)
     elif tool_tag == "mock-indexer":
-        query = args[args.index("--query") + 1] if "--query" in args else args[args.index("--symbol") + 1]
-        payload = _payload("agentic_indexer", query, "admin/tool/demo/settings.php")
+        if "--file" in args:
+            query = args[args.index("--file") + 1]
+            file_value = query
+        elif "--query" in args:
+            query = args[args.index("--query") + 1]
+            file_value = "admin/tool/demo/settings.php"
+        else:
+            query = args[args.index("--symbol") + 1]
+            file_value = "mod/assign/classes/output/grading_app.php"
+        payload = _payload("agentic_indexer", query, file_value)
     else:
         payload = _payload("agentic_sitemap", args[args.index("--query") + 1], "/course/view.php")
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
@@ -184,3 +194,34 @@ def test_orchestrator_filters_noisy_external_doc_anchors_from_promoted_evidence(
     values = [item["value"] for item in payload["results"][0]["content"]["suggested_next_steps"]]
     assert all("://" not in value for value in values)
     assert all(not value.startswith("//") for value in values)
+
+
+def test_orchestrator_shapes_vague_render_query_into_docs_anchor_for_indexer() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(query="understand how something should render in Moodle", route_mode="task")
+    result = payload["results"][0]
+    shaped = result["diagnostics"]["shaped_queries"]
+    assert result["diagnostics"]["query_shaping_applied"] is True
+    assert shaped[0]["shaped_query"] == "renderer output mustache template renderable"
+    assert result["diagnostics"]["code_signal_source"] == "source_path"
+    assert any(step["source_tool"] == "agentic_indexer" for step in result["content"]["suggested_next_steps"])
+
+
+def test_orchestrator_routes_render_symbol_query_directly_to_indexer_context_bundle() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(query="mod_assign\\output\\grading_app", route_mode="task")
+    result = payload["results"][0]
+    called = result["diagnostics"]["tools_called"]
+    assert [item["tool"] for item in called] == ["agentic_indexer"]
+    assert called[0]["mode"] == "build-context-bundle"
+    assert result["content"]["code_results"][0]["source"]["path"] == "mod/assign/classes/output/grading_app.php"
+
+
+def test_orchestrator_balances_render_next_steps_across_tools() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(query="understand how something should render in Moodle", route_mode="task")
+    steps = payload["results"][0]["content"]["suggested_next_steps"]
+    sources = {step["source_tool"] for step in steps}
+    assert "agentic_devdocs" in sources
+    assert "agentic_indexer" in sources
+    assert "agentic_sitemap" in sources

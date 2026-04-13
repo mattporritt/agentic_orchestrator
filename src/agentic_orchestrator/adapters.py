@@ -101,20 +101,23 @@ class IndexerAdapter(RuntimeToolAdapter):
                 ]
             )
         if request.mode == "build-context-bundle":
-            if not request.query:
-                raise ConfigurationError("Indexer build-context-bundle requests require a query.")
-            return self._run_json(
-                [
-                    "build-context-bundle",
-                    "--db-path",
-                    db_path,
-                    "--query",
-                    request.query,
-                    "--limit",
-                    str(limit),
-                    "--json-contract",
-                ]
-            )
+            args = [
+                "build-context-bundle",
+                "--db-path",
+                db_path,
+                "--limit",
+                str(limit),
+                "--json-contract",
+            ]
+            if request.symbol:
+                args.extend(["--symbol", request.symbol])
+            elif request.file:
+                args.extend(["--file", request.file])
+            elif request.query:
+                args.extend(["--query", request.query])
+            else:
+                raise ConfigurationError("Indexer build-context-bundle requests require a query, symbol, or file.")
+            return self._run_json(args)
         if request.mode == "semantic-context":
             if not request.query:
                 raise ConfigurationError("Indexer semantic-context requests require a query.")

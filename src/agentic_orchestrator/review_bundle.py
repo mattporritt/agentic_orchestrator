@@ -140,6 +140,8 @@ def _mock_runner(*, args, text, capture_output, check, cwd=None, env=None):
         query = args[args.index("--query") + 1]
     elif "--symbol" in args:
         query = args[args.index("--symbol") + 1]
+    elif "--file" in args:
+        query = args[args.index("--file") + 1]
     elif len(args) > 3 and args[2] == "query":
         query = args[3]
     if tool == "mock-devdocs":
@@ -224,6 +226,15 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
             encoding="utf-8",
         )
 
+    render_examples = [
+        ("render_vague_query", "understand how something should render in Moodle"),
+        ("render_symbol_query", "mod_assign\\output\\grading_app"),
+        ("render_file_query", "mod/assign/locallib.php"),
+    ]
+    for slug, query in render_examples:
+        payload = service.query(query=query, route_mode="task")
+        (examples_dir / f"{slug}.task.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
     for comparison in comparisons:
         case = next(item for item in routing_cases if item.id == comparison["case_id"])
         task_payload = service.query(query=case.query, context=case.context, route_mode="task")
@@ -265,6 +276,12 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         "- Improved `suggested_next_steps` to extract nested code paths and symbols from indexer bundles instead of only top-level fields",
         "- Filtered noisy external or relative-path anchors from promoted evidence so next steps stay more actionable",
         "- Kept grouped `docs_results`, `code_results`, and `site_results` intact underneath the promoted evidence",
+        "",
+        "## Render / Output Specificity",
+        "",
+        "- Root cause: vague render/output task wording was still reaching the indexer as broad free text, even though the live index already had stronger bundles for concrete render symbols and files",
+        "- Added narrow render-aware query shaping so a vague render task can reuse docs-derived renderer/template concepts for a more indexer-friendly code lookup",
+        "- Added symbol/file-aware render routing so concrete queries like `mod_assign\\output\\grading_app` and `mod/assign/locallib.php` go straight to `agentic_indexer` as bounded code anchors",
         "",
         "## Task Results",
         "",

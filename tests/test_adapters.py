@@ -94,6 +94,58 @@ def test_indexer_adapter_rejects_malformed_contract(tmp_path: Path) -> None:
         )
 
 
+def test_indexer_adapter_supports_symbol_and_file_context_bundle_queries(tmp_path: Path) -> None:
+    payload = {
+        "tool": "agentic_indexer",
+        "version": "v1",
+        "query": "mod_assign\\output\\grading_app",
+        "normalized_query": "mod_assign\\output\\grading_app",
+        "intent": {},
+        "results": [
+            {
+                "id": "1",
+                "type": "context_bundle",
+                "rank": 1,
+                "confidence": "high",
+                "source": {
+                    "name": "code",
+                    "type": "indexed_codebase",
+                    "url": None,
+                    "canonical_url": None,
+                    "path": "mod/assign/classes/output/grading_app.php",
+                    "document_title": None,
+                    "section_title": None,
+                    "heading_path": [],
+                },
+                "content": {},
+                "diagnostics": {},
+            }
+        ],
+    }
+    seen: list[list[str]] = []
+
+    def runner(**kwargs):
+        seen.append(list(kwargs["args"]))
+        return _completed(payload)
+
+    adapter = IndexerAdapter(
+        tool_config=ToolCommandConfig(name="agentic_indexer", command=[_make_executable(tmp_path)]),
+        runner=runner,
+    )
+    adapter.query(
+        db_path="/tmp/index.sqlite",
+        request=ToolRequest(tool_name="agentic_indexer", reason="test", mode="build-context-bundle", symbol="mod_assign\\output\\grading_app"),
+    )
+    adapter.query(
+        db_path="/tmp/index.sqlite",
+        request=ToolRequest(tool_name="agentic_indexer", reason="test", mode="build-context-bundle", file="mod/assign/locallib.php"),
+    )
+    assert "--symbol" in seen[0]
+    assert "mod_assign\\output\\grading_app" in seen[0]
+    assert "--file" in seen[1]
+    assert "mod/assign/locallib.php" in seen[1]
+
+
 def test_sitemap_adapter_requires_path_context_for_path_lookup(tmp_path: Path) -> None:
     adapter = SitemapAdapter(
         tool_config=ToolCommandConfig(name="agentic_sitemap", command=[_make_executable(tmp_path)]),

@@ -246,6 +246,8 @@ Recent context-assembly improvements stayed small and explicit:
 - extracted actionable code paths from nested indexer bundles instead of only top-level fields
 - filtered noisy external or relative-path anchors from promoted evidence and next steps
 - only require per-tool next steps when a tool result actually contains promotable evidence to turn into one
+- shape vague render/output code lookups into a narrow indexer-friendly concept query when docs evidence exposes output/template concepts
+- route concrete render/output symbol and file queries directly to `agentic_indexer` as bounded code anchors
 
 ## CLI
 

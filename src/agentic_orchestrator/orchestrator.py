@@ -37,19 +37,23 @@ class OrchestratorService:
         site_payload: dict[str, Any] | None = None
         records: list[ToolCallRecord] = []
         failures: list[dict[str, str]] = []
+        shaped_queries: list[dict[str, str]] = []
 
         for request in decision.tools:
-            records.append(tool_call_record(self.config, request))
+            effective_request = self._shape_request(request, decision=decision, docs_payload=docs_payload, code_payload=code_payload)
+            if effective_request != request:
+                shaped_queries.append(self._serialize_shaped_request(original=request, shaped=effective_request))
+            records.append(tool_call_record(self.config, effective_request))
             try:
-                payload = self._run_request(request)
+                payload = self._run_request(effective_request)
             except (ConfigurationError, ToolExecutionError) as exc:
-                failures.append({"tool": request.tool_name, "mode": request.mode, "error": str(exc)})
+                failures.append({"tool": effective_request.tool_name, "mode": effective_request.mode, "error": str(exc)})
                 continue
-            if request.tool_name == "agentic_devdocs":
+            if effective_request.tool_name == "agentic_devdocs":
                 docs_payload = payload
-            elif request.tool_name == "agentic_indexer":
+            elif effective_request.tool_name == "agentic_indexer":
                 code_payload = payload
-            elif request.tool_name == "agentic_sitemap":
+            elif effective_request.tool_name == "agentic_sitemap":
                 site_payload = payload
 
         if not any((docs_payload, code_payload, site_payload)) and failures:
@@ -84,6 +88,10 @@ class OrchestratorService:
         diagnostics["matched_route_signals"] = decision.routing_reasons
         diagnostics["selected_tools"] = [request.tool_name for request in decision.tools]
         diagnostics["assembly_notes"] = assembly["assembly_notes"]
+        diagnostics["query_shaping_applied"] = bool(shaped_queries)
+        diagnostics["shaped_queries"] = shaped_queries
+        if code_payload is not None:
+            diagnostics["code_signal_source"] = self._code_signal_source(code_payload)
         return payload
 
     def _run_request(self, request: ToolRequest) -> dict[str, Any]:
@@ -201,8 +209,8 @@ class OrchestratorService:
                     if isinstance(target_page_type, str) and target_page_type:
                         self._add_evidence(evidence, seen, "inspect_page_type", target_page_type, "agentic_sitemap")
 
-        key_signals = evidence[:6]
-        suggested_next_steps = evidence[:10]
+        key_signals = self._balanced_evidence(evidence, limit=6)
+        suggested_next_steps = self._balanced_evidence(evidence, limit=10)
         assembly_notes = [
             f"key_signal_count={len(key_signals)}",
             f"suggested_next_step_count={len(suggested_next_steps)}",
@@ -214,6 +222,38 @@ class OrchestratorService:
             "suggested_next_steps": suggested_next_steps,
             "assembly_notes": assembly_notes,
         }
+
+    def _shape_request(
+        self,
+        request: ToolRequest,
+        *,
+        decision: RoutingDecision,
+        docs_payload: dict[str, Any] | None,
+        code_payload: dict[str, Any] | None,
+    ) -> ToolRequest:
+        if request.tool_name != "agentic_indexer" or request.mode != "build-context-bundle":
+            return request
+        if request.symbol or request.file or not request.query:
+            return request
+        if decision.task_type != "render_ui" or docs_payload is None or code_payload is not None:
+            return request
+        shaped_target = self._select_render_shaped_target(docs_payload)
+        if not shaped_target:
+            return request
+        if shaped_target["kind"] == "file":
+            return ToolRequest(
+                tool_name=request.tool_name,
+                reason=f"{request.reason}; shaped render code query from docs anchor",
+                mode=request.mode,
+                query=request.query,
+                file=shaped_target["value"],
+            )
+        return ToolRequest(
+            tool_name=request.tool_name,
+            reason=f"{request.reason}; shaped render code query from docs concepts",
+            mode=request.mode,
+            query=shaped_target["value"],
+        )
 
     def _add_code_evidence(
         self,
@@ -241,6 +281,39 @@ class OrchestratorService:
                 if isinstance(symbol, str) and symbol:
                     self._add_evidence(evidence, seen, "inspect_symbol", symbol, "agentic_indexer")
 
+    def _select_render_shaped_target(self, docs_payload: dict[str, Any]) -> dict[str, str] | None:
+        candidates: list[str] = []
+        concept_tokens: list[str] = []
+        for result in docs_payload.get("results", [])[:3]:
+            source = result.get("source", {})
+            for value in (
+                source.get("document_title"),
+                source.get("section_title"),
+                *list(source.get("heading_path", [])),
+            ):
+                if isinstance(value, str) and value:
+                    concept_tokens.append(value.lower())
+            content = result.get("content", {})
+            for value in content.get("file_anchors", []):
+                if isinstance(value, str) and value and not self._is_noisy_path(value):
+                    candidates.append(value)
+        for candidate in candidates:
+            lowered = candidate.lower()
+            if any(token in lowered for token in ("renderer.php", "/output/", "mustache", "template")) and not any(
+                token in lowered for token in ("tool/demo", "mywidget.mustache")
+            ):
+                return {"kind": "file", "value": candidate}
+        for candidate in candidates:
+            lowered = candidate.lower()
+            if any(token in lowered for token in ("tool/demo", "mywidget.mustache")):
+                continue
+            if candidate.endswith(".php") or candidate.endswith(".mustache"):
+                return {"kind": "file", "value": candidate}
+        joined = " ".join(concept_tokens)
+        if any(token in joined for token in ("output api", "renderable", "template")):
+            return {"kind": "query", "value": "renderer output mustache template renderable"}
+        return None
+
     def _add_evidence(
         self,
         evidence: list[dict[str, str]],
@@ -257,6 +330,45 @@ class OrchestratorService:
 
     def _is_noisy_path(self, value: str) -> bool:
         return value.startswith("//") or "://" in value or value.startswith("../")
+
+    def _balanced_evidence(self, evidence: list[dict[str, str]], *, limit: int) -> list[dict[str, str]]:
+        if len(evidence) <= limit:
+            return evidence[:limit]
+        prioritized: list[dict[str, str]] = []
+        seen_tools: set[str] = set()
+        for item in evidence:
+            source_tool = item["source_tool"]
+            if source_tool in seen_tools:
+                continue
+            prioritized.append(item)
+            seen_tools.add(source_tool)
+            if len(prioritized) == limit:
+                return prioritized
+        for item in evidence:
+            if item in prioritized:
+                continue
+            prioritized.append(item)
+            if len(prioritized) == limit:
+                break
+        return prioritized
+
+    def _serialize_shaped_request(self, *, original: ToolRequest, shaped: ToolRequest) -> dict[str, str]:
+        return {
+            "tool": shaped.tool_name,
+            "original_query": str(original.query or ""),
+            "shaped_query": shaped.file or shaped.symbol or str(shaped.query or ""),
+            "reason": shaped.reason,
+        }
+
+    def _code_signal_source(self, code_payload: dict[str, Any]) -> str:
+        result = code_payload.get("results", [{}])[0]
+        content = result.get("content", {})
+        if result.get("source", {}).get("path"):
+            return "source_path"
+        for bucket in ("primary_context", "supporting_context", "optional_context", "example_patterns"):
+            if content.get(bucket):
+                return bucket
+        return "thin_bundle"
 
     def _serialize_record(self, item: ToolCallRecord) -> dict[str, Any]:
         return {

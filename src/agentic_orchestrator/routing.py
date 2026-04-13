@@ -16,6 +16,7 @@ class ToolRequest:
     mode: str
     query: str | None = None
     symbol: str | None = None
+    file: str | None = None
     lookup_mode: str | None = None
     from_page: str | None = None
     to_page: str | None = None
@@ -71,6 +72,9 @@ def _task_route(query: str, context: dict[str, Any], task_type: str, normalized:
     explicit_component = context.get("component_hint")
     explicit_site_lookup = context.get("site_lookup")
     explicit_symbol = context.get("symbol")
+    inferred_symbol = _infer_symbol_query(query)
+    inferred_file = _infer_file_query(query)
+    render_anchor = _is_render_code_anchor(query)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
 
@@ -81,7 +85,7 @@ def _task_route(query: str, context: dict[str, Any], task_type: str, normalized:
     code_needed = any(
         keyword in normalized
         for keyword in ("file", "symbol", "class", "function", "code", "plugin", "register", "define", "implement", "settings", "service", "privacy", "task", "render")
-    ) or bool(explicit_symbol)
+    ) or bool(explicit_symbol) or bool(inferred_symbol) or bool(inferred_file)
     site_needed = any(
         keyword in normalized for keyword in ("render", "ui", "page", "workflow", "screen", "navigate", "moodle page")
     ) or bool(explicit_site_lookup)
@@ -95,16 +99,33 @@ def _task_route(query: str, context: dict[str, Any], task_type: str, normalized:
         code_needed = True
         site_needed = True
         routing_reasons.append("known_render_ui_task")
+    if render_anchor and (inferred_symbol or inferred_file):
+        docs_needed = False
+        site_needed = False
+        code_needed = True
+        routing_reasons.append("render_code_anchor_query")
     if explicit_symbol:
         routing_reasons.append("explicit_symbol_context")
     if explicit_site_lookup:
         routing_reasons.append("explicit_site_lookup_context")
+    if inferred_symbol and not explicit_symbol:
+        routing_reasons.append("symbol_shaped_query")
+    if inferred_file:
+        routing_reasons.append("file_shaped_query")
 
     if docs_needed:
         tools.append(_docs_request(query=query, task_type=task_type))
         source_preferences.append("docs")
     if code_needed:
-        tools.append(_code_request(query=query, explicit_symbol=explicit_symbol, task_type=task_type))
+        tools.append(
+            _code_request(
+                query=query,
+                explicit_symbol=explicit_symbol,
+                inferred_symbol=inferred_symbol,
+                inferred_file=inferred_file,
+                task_type=task_type,
+            )
+        )
         source_preferences.append("code")
     if site_needed:
         tools.append(_site_request_for(query=query, context=context, task_type=task_type))
@@ -126,6 +147,8 @@ def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized:
     routing_notes: list[str] = [f"task_type={task_type}", "route_mode=auto"]
     explicit_component = context.get("component_hint")
     explicit_symbol = context.get("symbol")
+    inferred_symbol = _infer_symbol_query(query)
+    inferred_file = _infer_file_query(query)
     signals = _analyze_auto_routing(query=query, normalized=normalized, context=context, task_type=task_type)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
@@ -134,7 +157,16 @@ def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized:
         tools.append(_docs_request(query=query, task_type=task_type, reason="auto selected docs"))
         source_preferences.append("docs")
     if signals.code:
-        tools.append(_code_request(query=query, explicit_symbol=explicit_symbol, task_type=task_type, reason="auto selected code"))
+        tools.append(
+            _code_request(
+                query=query,
+                explicit_symbol=explicit_symbol,
+                inferred_symbol=inferred_symbol,
+                inferred_file=inferred_file,
+                task_type=task_type,
+                reason="auto selected code",
+            )
+        )
         source_preferences.append("code")
     if signals.site:
         tools.append(_site_request_for(query=query, context=context, task_type=task_type, reason="auto selected site"))
@@ -155,6 +187,8 @@ def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized:
 def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_tools: list[str]) -> RoutingDecision:
     explicit_component = context.get("component_hint")
     explicit_symbol = context.get("symbol")
+    inferred_symbol = _infer_symbol_query(query)
+    inferred_file = _infer_file_query(query)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
     for tool_name in manual_tools:
@@ -162,7 +196,16 @@ def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_to
             tools.append(_docs_request(query=query, task_type=task_type, reason="manual tool selection"))
             source_preferences.append("docs")
         elif tool_name == "agentic_indexer":
-            tools.append(_code_request(query=query, explicit_symbol=explicit_symbol, task_type=task_type, reason="manual tool selection"))
+            tools.append(
+                _code_request(
+                    query=query,
+                    explicit_symbol=explicit_symbol,
+                    inferred_symbol=inferred_symbol,
+                    inferred_file=inferred_file,
+                    task_type=task_type,
+                    reason="manual tool selection",
+                )
+            )
             source_preferences.append("code")
         elif tool_name == "agentic_sitemap":
             tools.append(_site_request_for(query=query, context=context, task_type=task_type, reason="manual tool selection"))
@@ -255,6 +298,7 @@ def _analyze_auto_routing(query: str, normalized: str, context: dict[str, Any], 
 
     if explicit_symbol:
         code = True
+        reasons.append("explicit_symbol_context")
 
     if explicit_site_lookup:
         site = True
@@ -271,6 +315,10 @@ def _analyze_auto_routing(query: str, normalized: str, context: dict[str, Any], 
         docs = True
         code = True
         reasons.append("behat_feature_query_needs_docs_and_code")
+
+    if _is_render_code_anchor(query):
+        code = True
+        reasons.append("render_code_anchor_query")
 
     if "language strings" in normalized or ("lang" in normalized and "string" in normalized):
         code = True
@@ -352,7 +400,14 @@ def _docs_request(query: str, task_type: str, reason: str | None = None) -> Tool
     )
 
 
-def _code_request(query: str, explicit_symbol: Any, task_type: str, reason: str | None = None) -> ToolRequest:
+def _code_request(
+    query: str,
+    explicit_symbol: Any,
+    inferred_symbol: str | None,
+    inferred_file: str | None,
+    task_type: str,
+    reason: str | None = None,
+) -> ToolRequest:
     if explicit_symbol:
         return ToolRequest(
             tool_name="agentic_indexer",
@@ -360,6 +415,21 @@ def _code_request(query: str, explicit_symbol: Any, task_type: str, reason: str 
             mode="find-definition",
             symbol=str(explicit_symbol),
         )
+    if _is_render_code_anchor(query):
+        if inferred_symbol:
+            return ToolRequest(
+                tool_name="agentic_indexer",
+                reason=reason or "render/output symbol query routed as concrete code anchor",
+                mode="build-context-bundle",
+                symbol=inferred_symbol,
+            )
+        if inferred_file:
+            return ToolRequest(
+                tool_name="agentic_indexer",
+                reason=reason or "render/output file query routed as concrete code anchor",
+                mode="build-context-bundle",
+                file=inferred_file,
+            )
     return ToolRequest(
         tool_name="agentic_indexer",
         reason=reason or f"code-oriented evidence for {task_type}",
@@ -377,6 +447,8 @@ def _classify_task_type(normalized_query: str) -> str:
         return "web_service"
     if "privacy" in normalized_query:
         return "privacy_metadata"
+    if _is_render_code_anchor(normalized_query):
+        return "render_ui"
     if any(keyword in normalized_query for keyword in ("render", "ui", "workflow", "page context", "screen")):
         return "render_ui"
     if any(keyword in normalized_query for keyword in ("symbol", "definition", "file", "class", "function", "language strings", "behat feature")):
@@ -384,6 +456,44 @@ def _classify_task_type(normalized_query: str) -> str:
     if any(keyword in normalized_query for keyword in ("docs", "documentation", "how does moodle")):
         return "documentation"
     return "general_context"
+
+
+def _infer_symbol_query(query: str) -> str | None:
+    value = query.strip()
+    if "\\" in value and " " not in value:
+        return value
+    if "::" in value and " " not in value:
+        return value
+    return None
+
+
+def _infer_file_query(query: str) -> str | None:
+    value = query.strip()
+    if " " in value:
+        return None
+    if "/" in value and any(value.endswith(suffix) for suffix in (".php", ".mustache", ".js", ".ts")):
+        return value
+    return None
+
+
+def _is_render_code_anchor(query: str) -> bool:
+    normalized = normalize_query(query)
+    raw = query.strip().lower()
+    return any(
+        token in normalized or token in raw
+        for token in (
+            "renderer",
+            "renderable",
+            "templatable",
+            "mustache",
+            "/output/",
+            "\\output\\",
+            "grading_app",
+            "locallib.php",
+            "::view",
+            "template",
+        )
+    )
 
 
 def _site_request_for(query: str, context: dict[str, Any], task_type: str, reason: str | None = None) -> ToolRequest:
