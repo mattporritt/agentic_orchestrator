@@ -89,6 +89,27 @@ def sanitized_config_report(config: OrchestratorConfig) -> dict[str, object]:
     }
 
 
+def serializable_health_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a JSON-stable subset of the runtime health report."""
+
+    return {
+        "overall_status": report["overall_status"],
+        "generated_at": report["generated_at"],
+        "deep": report["deep"],
+        "thresholds": report["thresholds"],
+        "checks": [
+            {
+                "name": check["name"],
+                "status": check["status"],
+                "summary": check["summary"],
+                "details": check["details"],
+            }
+            for check in report["checks"]
+        ],
+        "notes": list(report["notes"]),
+    }
+
+
 def build_review_summary(
     *,
     bundle_dir: Path,
@@ -97,6 +118,7 @@ def build_review_summary(
     config: OrchestratorConfig,
     task_evaluation: dict[str, Any],
     routing_evaluation: dict[str, Any],
+    health_report: dict[str, Any] | None = None,
 ) -> str:
     """Build the human-readable summary for a review bundle.
 
@@ -124,12 +146,11 @@ def build_review_summary(
         "- `PARTIAL`: merged context was usable but still thin, noisy, or missing one key task signal",
         "- `INSUFFICIENT`: merged context was missing expected tools or too many required task signals",
         "",
-        "## Maintainability Pass",
+        "## Runtime Health / Drift",
         "",
-        "- Tightened human-facing setup and usage documentation for first-time users",
-        "- Added AI/contributor guidance for safe edits, testing, and architecture boundaries",
-        "- Strengthened behavior-locking tests around config, bundle generation, and diagnostics",
-        "- Performed a light refactor by extracting review reporting helpers out of the bundle generator",
+        "- Added a practical `health` command for local sibling-tool path checks, resource presence checks, recency drift warnings, and contract sanity checks",
+        "- Health statuses are explicit: `OK`, `WARNING`, `FAIL`",
+        "- `--deep` is available for optional routing/task baseline sanity checks",
         "",
         "## Behavior Verification",
         "",
@@ -144,6 +165,12 @@ def build_review_summary(
         summary_lines.append(
             f"- `{case['case_id']}`: {case['status']} -> tools={', '.join(case['selected_tools'])}; present={', '.join(case['key_signals_present']) or '(none)'}"
         )
+    if health_report is not None:
+        summary_lines.extend(["", "## Health Snapshot", ""])
+        summary_lines.append(f"- Overall health: {health_report['overall_status']}")
+        summary_lines.append(f"- Deep checks in bundle artifact: {'enabled' if health_report['deep'] else 'disabled'}")
+        for check in health_report["checks"]:
+            summary_lines.append(f"- `{check['name']}`: {check['status']} -> {check['summary']}")
     if task_weak_cases:
         summary_lines.extend(["", "## Thin / Missing / Noisy Cases", ""])
         for case in task_weak_cases:

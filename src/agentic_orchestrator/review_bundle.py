@@ -12,11 +12,13 @@ from pathlib import Path
 
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
 from agentic_orchestrator.errors import ConfigurationError
+from agentic_orchestrator.health import collect_health_report, render_health_text
 from agentic_orchestrator.orchestrator import OrchestratorService
 from agentic_orchestrator.review_reporting import (
     build_review_summary,
     render_mode_comparison_markdown,
     sanitized_config_report,
+    serializable_health_report,
     serializable_routing_eval,
     serializable_task_eval,
 )
@@ -34,6 +36,7 @@ class ReviewBundleRuntime:
     service: OrchestratorService
     execution_mode: str
     config: OrchestratorConfig
+    runner: object | None = None
 
 
 def _runtime_source(name: str, path: str | None = None) -> dict:
@@ -193,12 +196,14 @@ def build_review_runtime(*, config_path: str | None = None, allow_mock_fallback:
             service=OrchestratorService.from_config(mock_config, runner=_mock_runner),
             execution_mode="mock_fallback",
             config=mock_config,
+            runner=_mock_runner,
         )
 
     return ReviewBundleRuntime(
         service=OrchestratorService.from_config(config),
         execution_mode="real_local_tools",
         config=config,
+        runner=None,
     )
 
 
@@ -218,6 +223,7 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     comparisons = [compare_modes_for_case(case) for case in comparison_cases]
     task_cases = load_task_eval_cases()
     task_evaluation = evaluate_task_outputs(service, cases=task_cases)
+    health_report = collect_health_report(config, runner=runtime.runner, deep=False)
 
     for case_result in routing_evaluation["cases"]:
         slug = case_result["case_id"]
@@ -258,6 +264,8 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "mode_comparison.md").write_text(render_mode_comparison_markdown(comparisons), encoding="utf-8")
     (bundle_dir / "config-used.json").write_text(json.dumps(sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "health.json").write_text(json.dumps(serializable_health_report(health_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "health.txt").write_text(render_health_text(health_report), encoding="utf-8")
     (bundle_dir / "README.snapshot.md").write_text((repo_root / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
     for doc_name in ("AGENTS.md", "CONTRIBUTING.md"):
         doc_path = repo_root / doc_name
@@ -299,6 +307,7 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
             config=config,
             task_evaluation=task_evaluation,
             routing_evaluation=routing_evaluation,
+            health_report=health_report,
         ),
         encoding="utf-8",
     )

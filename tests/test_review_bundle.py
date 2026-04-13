@@ -65,6 +65,8 @@ def test_generate_review_bundle_can_use_mock_fallback(tmp_path: Path, monkeypatc
     assert "summary" in routing_eval
     assert "by_query_style" in routing_eval
     assert "summary" in task_eval
+    assert (bundle_dir / "health.json").exists()
+    assert (bundle_dir / "health.txt").exists()
     assert (bundle_dir / "mode_comparison.md").exists()
     assert (bundle_dir / "task_eval.txt").exists()
     assert (bundle_dir / "README.snapshot.md").exists()

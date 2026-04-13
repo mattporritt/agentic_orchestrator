@@ -43,6 +43,7 @@ git status --short
 For live local verification:
 
 ```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
 ```
 
@@ -56,6 +57,7 @@ PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.l
 - `src/agentic_orchestrator/task_eval.py`: task-level usefulness evaluation
 - `src/agentic_orchestrator/review_bundle.py`: live/mock artifact generation
 - `src/agentic_orchestrator/review_reporting.py`: summary/serialization helpers for bundle output
+- `src/agentic_orchestrator/health.py`: local runtime health, recency, and drift checks
 
 ## Safe Change Pattern
 

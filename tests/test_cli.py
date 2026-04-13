@@ -88,3 +88,44 @@ def test_cli_plain_mode(monkeypatch, capsys) -> None:
     assert "Combined context" in output
     assert "Route mode: task" in output
     assert "agentic_indexer" in output
+
+
+def test_cli_health_json_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "collect_health_report",
+        lambda config, deep=False: {
+            "overall_status": "OK",
+            "generated_at": "2026-04-14T10:00:00+00:00",
+            "deep": deep,
+            "checks": [],
+            "notes": [],
+            "thresholds": {},
+        },
+    )
+    rc = cli.main(["health", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["overall_status"] == "OK"
+    assert payload["deep"] is False
+
+
+def test_cli_health_plain_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "collect_health_report",
+        lambda config, deep=False: {
+            "overall_status": "WARNING",
+            "generated_at": "2026-04-14T10:00:00+00:00",
+            "deep": deep,
+            "checks": [{"name": "resource.indexer_db", "status": "WARNING", "summary": "stale", "details": {}}],
+            "notes": ["warning note"],
+            "thresholds": {},
+        },
+    )
+    rc = cli.main(["health", "--deep"])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Overall: WARNING" in output
+    assert "Deep checks: enabled" in output
+    assert "[WARNING] resource.indexer_db: stale" in output

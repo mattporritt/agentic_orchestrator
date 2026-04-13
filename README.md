@@ -70,7 +70,14 @@ PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
 python3 -m pytest
 ```
 
-6. Generate a live review bundle when you need a verification artifact:
+6. Run a runtime health check before real orchestrated development work:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli health \
+  --config ./config.local.toml
+```
+
+7. Generate a live review bundle when you need a verification artifact:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
@@ -84,7 +91,8 @@ For a Codex-style worker or other AI assistant:
 2. Read [`AGENTS.md`](/Users/mattp/projects/agentic_orchestrator/AGENTS.md) for repo-specific commands and safety expectations.
 3. Use `config.local.toml` or `_smoke_test/live_config.toml` only if the local environment already has valid sibling-tool resources.
 4. Prefer deterministic tests (`python3 -m pytest`) before any live bundle run.
-5. Keep changes thin: routing, assembly, evaluation, docs, or review-bundle behavior only when clearly within scope.
+5. Use `health` as a preflight before relying on live sibling-tool results.
+6. Keep changes thin: routing, assembly, evaluation, docs, or review-bundle behavior only when clearly within scope.
 
 ## What It Is
 
@@ -205,6 +213,41 @@ Typical local setup steps:
 3. add `extra_args` only when needed, for example `["-m", "agentic_docs.cli"]`
 4. set the `resources` paths to the real docs DB, index DB, and sitemap run
 5. run a JSON query and then the test suite
+
+## Runtime Health / Drift Command
+
+Use the health command as a conservative preflight check before real orchestrated work:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml
+PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml --json
+PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml --deep
+```
+
+What it checks:
+
+- sibling tool command path exists and is executable
+- configured tool workdir exists when set
+- configured resource paths exist:
+  - devdocs DB
+  - indexer DB
+  - sitemap run directory
+- conservative recency/drift checks using resource mtimes
+- lightweight runtime-contract sanity calls against each sibling tool
+- optional deep baseline checks for routing and task-eval summaries
+
+Health statuses:
+
+- `OK`: the check passed and looks trustworthy
+- `WARNING`: the environment is usable but may be stale or drifting
+- `FAIL`: the local runtime is not trustworthy enough for normal orchestrated use
+
+What it does not check:
+
+- retrieval quality inside each sibling tool
+- every possible runtime command surface
+- historical drift over time
+- full eval reruns unless `--deep` is requested
 
 ## Route Modes
 
