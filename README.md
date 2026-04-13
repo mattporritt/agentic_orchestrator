@@ -245,6 +245,7 @@ Recent context-assembly improvements stayed small and explicit:
 - promoted compact `key_signals` alongside the grouped tool outputs
 - extracted actionable code paths from nested indexer bundles instead of only top-level fields
 - filtered noisy external or relative-path anchors from promoted evidence and next steps
+- only require per-tool next steps when a tool result actually contains promotable evidence to turn into one
 
 ## CLI
 

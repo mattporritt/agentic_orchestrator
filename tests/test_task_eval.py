@@ -89,6 +89,57 @@ def test_evaluate_task_outputs_reports_signal_coverage_and_noise() -> None:
     assert result["noise_flags"] == []
     assert diagnostics["task_eval_status"] == "COMPLETE"
     assert diagnostics["key_signals_present"]
+    assert diagnostics["thinness_flags"] == []
+
+
+def test_task_eval_does_not_require_next_step_from_empty_indexer_bundle() -> None:
+    result = {
+        "content": {
+            "docs_results": [
+                {
+                    "source": {"path": "docs/apis/subsystems/output/index.md"},
+                    "content": {"file_anchors": ["admin/tool/demo/classes/output/renderer.php"]},
+                }
+            ],
+            "code_results": [
+                {
+                    "source": {"path": None},
+                    "content": {
+                        "path": None,
+                        "file": None,
+                        "symbol": None,
+                        "primary_context": [],
+                        "example_patterns": [],
+                        "optional_context": [],
+                        "supporting_context": [],
+                        "tests_to_consider": [],
+                    },
+                }
+            ],
+            "site_results": [{"source": {"path": "/my"}, "content": {"page_type": "dashboard"}}],
+            "key_signals": [
+                {"kind": "read_doc", "value": "docs/apis/subsystems/output/index.md", "source_tool": "agentic_devdocs"},
+                {"kind": "inspect_file", "value": "admin/tool/demo/classes/output/renderer.php", "source_tool": "agentic_devdocs"},
+                {"kind": "inspect_page_type", "value": "dashboard", "source_tool": "agentic_sitemap"},
+            ],
+            "suggested_next_steps": [
+                {"kind": "read_doc", "value": "docs/apis/subsystems/output/index.md", "source_tool": "agentic_devdocs"},
+                {"kind": "inspect_page_type", "value": "dashboard", "source_tool": "agentic_sitemap"},
+            ],
+        }
+    }
+    case = TaskEvalCase(
+        id="render",
+        query="understand how something should render in Moodle",
+        route_mode="task",
+        expected_tools=["agentic_devdocs", "agentic_indexer", "agentic_sitemap"],
+        required_signals=[],
+        notes=[],
+        context={},
+    )
+    from agentic_orchestrator.task_eval import _thinness_flags
+
+    assert _thinness_flags(case, result) == []
 
 
 def test_render_task_eval_text_includes_usefulness_summary() -> None:

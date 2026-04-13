@@ -93,6 +93,7 @@ def evaluate_task_outputs(
         result["diagnostics"]["key_signals_present"] = present_labels
         result["diagnostics"]["missing_signals"] = missing_labels
         result["diagnostics"]["noise_flags"] = noise_flags
+        result["diagnostics"]["thinness_flags"] = thinness_flags
         counts[grade["status"]] += 1
         results.append(
             {
@@ -220,7 +221,7 @@ def _thinness_flags(case: TaskEvalCase, result: dict[str, Any]) -> list[str]:
         if not content.get(group_name):
             flags.append(f"missing_{group_name}")
         expected_step_source = tool
-        if not any(step.get("source_tool") == expected_step_source for step in content.get("suggested_next_steps", [])):
+        if not any(step.get("source_tool") == expected_step_source for step in content.get("suggested_next_steps", [])) and _tool_has_promotable_evidence(result, tool):
             flags.append(f"missing_{tool}_next_step")
     return flags
 
@@ -237,3 +238,38 @@ def _noise_flags(result: dict[str, Any]) -> list[str]:
         if value.startswith("//") or "://" in value:
             flags.append("external_like_next_step")
     return flags
+
+
+def _tool_has_promotable_evidence(result: dict[str, Any], tool_name: str) -> bool:
+    content = result["content"]
+    group_name = {
+        "agentic_devdocs": "docs_results",
+        "agentic_indexer": "code_results",
+        "agentic_sitemap": "site_results",
+    }[tool_name]
+    group = content.get(group_name, [])
+    if not group:
+        return False
+    if any(signal.get("source_tool") == tool_name for signal in content.get("key_signals", [])):
+        return True
+    for item in group:
+        body = item.get("content", {})
+        for key in ("path", "file", "symbol", "fqname", "name"):
+            value = body.get(key)
+            if isinstance(value, str) and value:
+                return True
+        for key in ("file_anchors",):
+            if any(isinstance(value, str) and value for value in body.get(key, [])):
+                return True
+        for bucket in ("primary_context", "example_patterns", "optional_context", "supporting_context", "tests_to_consider"):
+            for nested in body.get(bucket, []):
+                if not isinstance(nested, dict):
+                    continue
+                for key in ("path", "symbol"):
+                    value = nested.get(key)
+                    if isinstance(value, str) and value:
+                        return True
+        page_type = body.get("page_type")
+        if isinstance(page_type, str) and page_type:
+            return True
+    return False
