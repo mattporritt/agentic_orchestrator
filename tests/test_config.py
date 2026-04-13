@@ -87,3 +87,28 @@ command = "moodle-sitemap"
     )
     config = OrchestratorConfig.from_args(args)
     assert config.devdocs.command == ["/override/devdocs"]
+
+
+def test_validate_required_resources_fails_when_indexer_db_missing(tmp_path: Path) -> None:
+    executable = tmp_path / "tool"
+    executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    executable.chmod(0o755)
+    config = OrchestratorConfig.from_args(
+        Namespace(
+            config=None,
+            devdocs_cmd=str(executable),
+            devdocs_workdir=None,
+            devdocs_extra_args=None,
+            indexer_cmd=str(executable),
+            indexer_workdir=None,
+            indexer_extra_args=None,
+            sitemap_cmd=str(executable),
+            sitemap_workdir=None,
+            sitemap_extra_args=None,
+            devdocs_db_path="/tmp/devdocs.sqlite",
+            indexer_db_path=None,
+            sitemap_run_dir="/tmp/run",
+        )
+    )
+    with pytest.raises(ConfigurationError, match="configured indexer DB path"):
+        config.validate_required_resources(["agentic_indexer"])

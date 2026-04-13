@@ -231,6 +231,12 @@ class OrchestratorService:
         docs_payload: dict[str, Any] | None,
         code_payload: dict[str, Any] | None,
     ) -> ToolRequest:
+        """Optionally narrow an indexer request using already-available docs evidence.
+
+        This keeps shaping deterministic: we only rewrite vague render/UI code
+        lookups after devdocs has already surfaced render/template concepts.
+        """
+
         if request.tool_name != "agentic_indexer" or request.mode != "build-context-bundle":
             return request
         if request.symbol or request.file or not request.query:
@@ -282,6 +288,8 @@ class OrchestratorService:
                     self._add_evidence(evidence, seen, "inspect_symbol", symbol, "agentic_indexer")
 
     def _select_render_shaped_target(self, docs_payload: dict[str, Any]) -> dict[str, str] | None:
+        """Choose one narrow render-oriented target from docs evidence if possible."""
+
         candidates: list[str] = []
         concept_tokens: list[str] = []
         for result in docs_payload.get("results", [])[:3]:
@@ -332,6 +340,8 @@ class OrchestratorService:
         return value.startswith("//") or "://" in value or value.startswith("../")
 
     def _balanced_evidence(self, evidence: list[dict[str, str]], *, limit: int) -> list[dict[str, str]]:
+        """Keep at least one promoted step per contributing tool when possible."""
+
         if len(evidence) <= limit:
             return evidence[:limit]
         prioritized: list[dict[str, str]] = []

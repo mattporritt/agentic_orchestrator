@@ -22,6 +22,8 @@ TOOL_KEY_MAP = {
 
 
 def _split_command(value: str | list[str] | None) -> list[str]:
+    """Normalize CLI config values into an argv-style list."""
+
     if value is None:
         return []
     if isinstance(value, list):
@@ -30,6 +32,8 @@ def _split_command(value: str | list[str] | None) -> list[str]:
 
 
 def _string_map(value: Any) -> dict[str, str]:
+    """Validate and normalize environment override mappings."""
+
     if value is None:
         return {}
     if not isinstance(value, dict):
@@ -46,14 +50,20 @@ class ToolCommandConfig:
     env: dict[str, str] | None = None
 
     def command_line(self) -> list[str]:
+        """Return the configured executable plus any static extra arguments."""
+
         return [*self.command, *(self.extra_args or [])]
 
     def merged_env(self) -> dict[str, str] | None:
+        """Overlay configured environment overrides onto the current process env."""
+
         if not self.env:
             return None
         return {**os.environ, **self.env}
 
     def resolved_program(self) -> str:
+        """Resolve the executable path and fail with a user-facing error if missing."""
+
         if not self.command:
             raise ConfigurationError(f"{self.name} command is not configured.")
         program = self.command[0]
@@ -70,6 +80,8 @@ class ToolCommandConfig:
         return resolved
 
     def validate(self) -> None:
+        """Validate the executable and optional working directory for one tool."""
+
         self.resolved_program()
         if self.workdir:
             path = Path(self.workdir).expanduser()
@@ -126,6 +138,8 @@ class OrchestratorConfig:
         )
 
     def tool_config(self, tool_name: str) -> ToolCommandConfig:
+        """Return the concrete tool config for a runtime-facing tool name."""
+
         if tool_name == "agentic_devdocs":
             return self.devdocs
         if tool_name == "agentic_indexer":
@@ -138,6 +152,8 @@ class OrchestratorConfig:
         self.tool_config(tool_name).validate()
 
     def validate_required_resources(self, tool_names: list[str]) -> None:
+        """Check that commands and backing resources exist for the requested tools."""
+
         for tool_name in tool_names:
             self.validate_tool(tool_name)
             if tool_name == "agentic_devdocs" and not self.devdocs_db_path:
@@ -148,6 +164,8 @@ class OrchestratorConfig:
                 raise ConfigurationError("Sitemap queries require a configured sitemap run directory.")
 
     def tool_path_report(self) -> list[dict[str, Any]]:
+        """Return a review-friendly summary of configured tool commands."""
+
         report: list[dict[str, Any]] = []
         for tool_name in ("agentic_devdocs", "agentic_indexer", "agentic_sitemap"):
             tool = self.tool_config(tool_name)
@@ -163,6 +181,8 @@ class OrchestratorConfig:
 
 
 def _first_value(*values: Any) -> Any:
+    """Return the first non-None value from an ordered precedence chain."""
+
     for value in values:
         if value is not None:
             return value
@@ -176,6 +196,8 @@ def _build_tool_config(
     file_tools: dict[str, Any],
     default_command: str,
 ) -> ToolCommandConfig:
+    """Build one tool config from CLI args, environment, and optional TOML values."""
+
     tool_file = file_tools.get(key, {}) if isinstance(file_tools, dict) else {}
     env_prefix = f"AGENTIC_ORCHESTRATOR_{key.upper()}"
     command = _split_command(

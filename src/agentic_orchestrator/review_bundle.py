@@ -13,6 +13,13 @@ from pathlib import Path
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
 from agentic_orchestrator.errors import ConfigurationError
 from agentic_orchestrator.orchestrator import OrchestratorService
+from agentic_orchestrator.review_reporting import (
+    build_review_summary,
+    render_mode_comparison_markdown,
+    sanitized_config_report,
+    serializable_routing_eval,
+    serializable_task_eval,
+)
 from agentic_orchestrator.routing_eval import (
     compare_modes_for_case,
     evaluate_auto_routing,
@@ -242,173 +249,64 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         (examples_dir / f"{case.id}.task.json").write_text(json.dumps(task_payload, indent=2, sort_keys=True), encoding="utf-8")
         (examples_dir / f"{case.id}.manual.json").write_text(json.dumps(manual_payload, indent=2, sort_keys=True), encoding="utf-8")
 
-    (bundle_dir / "routing_eval.json").write_text(json.dumps(_serializable_eval(routing_evaluation), indent=2, sort_keys=True), encoding="utf-8")
-    (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(_serializable_eval(routing_evaluation)), encoding="utf-8")
-    (bundle_dir / "task_eval.json").write_text(json.dumps(_serializable_task_eval(task_evaluation), indent=2, sort_keys=True), encoding="utf-8")
-    (bundle_dir / "task_eval.txt").write_text(render_task_eval_text(_serializable_task_eval(task_evaluation)), encoding="utf-8")
+    routing_eval_payload = serializable_routing_eval(routing_evaluation)
+    task_eval_payload = serializable_task_eval(task_evaluation)
+    (bundle_dir / "routing_eval.json").write_text(json.dumps(routing_eval_payload, indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(routing_eval_payload), encoding="utf-8")
+    (bundle_dir / "task_eval.json").write_text(json.dumps(task_eval_payload, indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "task_eval.txt").write_text(render_task_eval_text(task_eval_payload), encoding="utf-8")
     (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
-    (bundle_dir / "mode_comparison.md").write_text(_render_mode_comparison_markdown(comparisons), encoding="utf-8")
-    (bundle_dir / "config-used.json").write_text(json.dumps(_sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
-
-    task_weak_cases = [case for case in task_evaluation["cases"] if case["status"] != "COMPLETE"]
-    summary_lines = [
-        "# Task Review Summary",
-        "",
-        "## Runtime Mode",
-        "",
-        f"- Review bundle execution mode: `{runtime.execution_mode}`",
-        f"- Config path: `{config_path or config.config_path or '(none)'}`",
-        "",
-        "## Task Evaluation Slice",
-        "",
-        f"- Task cases evaluated: {len(task_evaluation['cases'])}",
-        "- Focus: whether the merged orchestrator output is complete, too thin, or too noisy for representative Moodle development tasks",
-        "",
-        "## Task Usefulness Semantics",
-        "",
-        "- `COMPLETE`: merged context included the expected tool contributions and required task signals",
-        "- `PARTIAL`: merged context was usable but still thin, noisy, or missing one key task signal",
-        "- `INSUFFICIENT`: merged context was missing expected tools or too many required task signals",
-        "",
-        "## Assembly Changes",
-        "",
-        "- Promoted compact `key_signals` so the best doc, code, and site evidence is visible without flattening tool boundaries",
-        "- Improved `suggested_next_steps` to extract nested code paths and symbols from indexer bundles instead of only top-level fields",
-        "- Filtered noisy external or relative-path anchors from promoted evidence so next steps stay more actionable",
-        "- Kept grouped `docs_results`, `code_results`, and `site_results` intact underneath the promoted evidence",
-        "",
-        "## Render / Output Specificity",
-        "",
-        "- Root cause: vague render/output task wording was still reaching the indexer as broad free text, even though the live index already had stronger bundles for concrete render symbols and files",
-        "- Added narrow render-aware query shaping so a vague render task can reuse docs-derived renderer/template concepts for a more indexer-friendly code lookup",
-        "- Added symbol/file-aware render routing so concrete queries like `mod_assign\\output\\grading_app` and `mod/assign/locallib.php` go straight to `agentic_indexer` as bounded code anchors",
-        "",
-        "## Task Results",
-        "",
-        f"- complete: {task_evaluation['summary']['COMPLETE']}",
-        f"- partial: {task_evaluation['summary']['PARTIAL']}",
-        f"- insufficient: {task_evaluation['summary']['INSUFFICIENT']}",
-        "",
-        "## Representative Task Cases",
-        "",
-    ]
-    for case in task_evaluation["cases"]:
-        summary_lines.append(
-            f"- `{case['case_id']}`: {case['status']} -> tools={', '.join(case['selected_tools'])}; present={', '.join(case['key_signals_present']) or '(none)'}"
+    (bundle_dir / "mode_comparison.md").write_text(render_mode_comparison_markdown(comparisons), encoding="utf-8")
+    (bundle_dir / "config-used.json").write_text(json.dumps(sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "README.snapshot.md").write_text((repo_root / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
+    for doc_name in ("AGENTS.md", "CONTRIBUTING.md"):
+        doc_path = repo_root / doc_name
+        if doc_path.exists():
+            (bundle_dir / doc_name).write_text(doc_path.read_text(encoding="utf-8"), encoding="utf-8")
+    (bundle_dir / "docs-checklist.md").write_text(
+        "\n".join(
+            [
+                "# Docs Checklist",
+                "",
+                "- README updated with project scope, setup, quickstart, testing, and review-bundle guidance",
+                "- AI/contributor guidance captured in AGENTS.md and CONTRIBUTING.md",
+                "- Review bundle now snapshots changed docs for external verification",
+                "",
+            ]
         )
-    if task_weak_cases:
-        summary_lines.extend(["", "## Thin / Missing / Noisy Cases", ""])
-        for case in task_weak_cases:
-            line = f"- `{case['case_id']}`: {case['status']}"
-            if case["missing_signals"]:
-                line += f"; missing={', '.join(case['missing_signals'])}"
-            if case["thinness_flags"]:
-                line += f"; thinness={', '.join(case['thinness_flags'])}"
-            if case["noise_flags"]:
-                line += f"; noise={', '.join(case['noise_flags'])}"
-            summary_lines.append(line)
-    summary_lines.extend(
-        [
-            "",
-            "## Routing Stability",
-            "",
-            f"- current routing baseline: correct={routing_evaluation['summary']['CORRECT']}, acceptable={routing_evaluation['summary']['ACCEPTABLE']}, overcalled={routing_evaluation['summary']['OVERCALLED']}, undercalled={routing_evaluation['summary']['UNDERCALLED']}, wrong={routing_evaluation['summary']['WRONG']}",
-            "- This phase did not intentionally broaden routing; the main changes were in assembly and promoted evidence",
-            "",
-            "## Remaining Limitations",
-            "",
-            "- Task evaluation still grades deterministic signal coverage rather than semantic answer quality",
-            "- Some sibling-tool results remain inherently thin, especially when indexer free-text bundles do not return a strong primary context",
-            "- The orchestrator still assembles evidence; it does not plan edits or decide implementation steps",
-            "",
-            "## Tool Paths Used",
-            "",
-        ]
+        + "\n",
+        encoding="utf-8",
     )
-    for row in config.tool_path_report():
-        summary_lines.append(
-            f"- `{row['tool']}` program=`{row['program']}` workdir=`{row['workdir']}` extra_args=`{row['extra_args']}`"
+    (bundle_dir / "refactor-map.md").write_text(
+        "\n".join(
+            [
+                "# Refactor Map",
+                "",
+                "- Extracted review summary and serialization helpers into `src/agentic_orchestrator/review_reporting.py`",
+                "- Kept `review_bundle.py` focused on runtime selection, artifact generation, and command capture",
+                "- Verified behavior stability with deterministic tests plus live eval reruns",
+                "",
+            ]
         )
-    summary_lines.extend(
-        [
-            "",
-            f"Task review artifact bundle path: {bundle_dir}",
-        ]
+        + "\n",
+        encoding="utf-8",
     )
-    (bundle_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    (bundle_dir / "summary.md").write_text(
+        build_review_summary(
+            bundle_dir=bundle_dir,
+            runtime_mode=runtime.execution_mode,
+            config_path=config_path,
+            config=config,
+            task_evaluation=task_evaluation,
+            routing_evaluation=routing_evaluation,
+        ),
+        encoding="utf-8",
+    )
 
     _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
     _write_command_output(bundle_dir / "git-status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
     _write_command_output(bundle_dir / "git-commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
     return bundle_dir
-
-
-def _serializable_eval(evaluation: dict[str, object]) -> dict[str, object]:
-    return {
-        "summary": evaluation["summary"],
-        "by_query_style": evaluation["by_query_style"],
-        "cases": [
-            {
-                "case_id": case["case_id"],
-                "query": case["query"],
-                "query_style": case["query_style"],
-                "preferred_tools": case["preferred_tools"],
-                "acceptable_tool_sets": case["acceptable_tool_sets"],
-                "disallowed_tools": case["disallowed_tools"],
-                "selected_tools": case["selected_tools"],
-                "status": case["status"],
-                "reason": case["reason"],
-                "notes": case["notes"],
-            }
-            for case in evaluation["cases"]
-        ],
-    }
-
-
-def _serializable_task_eval(evaluation: dict[str, object]) -> dict[str, object]:
-    return {
-        "summary": evaluation["summary"],
-        "cases": [
-            {
-                "case_id": case["case_id"],
-                "query": case["query"],
-                "route_mode": case["route_mode"],
-                "expected_tools": case["expected_tools"],
-                "selected_tools": case["selected_tools"],
-                "status": case["status"],
-                "reason": case["reason"],
-                "key_signals_present": case["key_signals_present"],
-                "missing_signals": case["missing_signals"],
-                "thinness_flags": case["thinness_flags"],
-                "noise_flags": case["noise_flags"],
-                "assembly_notes": case["assembly_notes"],
-                "notes": case["notes"],
-            }
-            for case in evaluation["cases"]
-        ],
-    }
-
-
-def _render_mode_comparison_markdown(comparisons: list[dict[str, object]]) -> str:
-    lines = ["# Mode Comparison", ""]
-    for item in comparisons:
-        lines.append(f"- `{item['case_id']}`")
-        lines.append(f"  task: {', '.join(item['task_tools'])}")
-        lines.append(f"  auto: {', '.join(item['auto_tools'])}")
-        lines.append(f"  manual: {', '.join(item['manual_tools'])}")
-    return "\n".join(lines) + "\n"
-
-
-def _sanitized_config_report(config: OrchestratorConfig) -> dict[str, object]:
-    return {
-        "config_path": config.config_path,
-        "tools": config.tool_path_report(),
-        "resources": {
-            "devdocs_db_path": config.devdocs_db_path,
-            "indexer_db_path": config.indexer_db_path,
-            "sitemap_run_dir": config.sitemap_run_dir,
-        },
-    }
 
 
 def main(argv: list[str] | None = None) -> int:

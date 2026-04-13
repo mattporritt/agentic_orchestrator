@@ -8,6 +8,84 @@
 
 It stays intentionally narrow. It calls those tools in their existing CLI JSON-contract modes, validates the shared outer envelope shape, and merges the resulting docs/code/site context into a single runtime-facing response for a coding agent to consume.
 
+## When To Use It
+
+Use the orchestrator when a human developer or coding agent needs a compact, provenance-preserving bundle of Moodle context across:
+
+- documentation and policy guidance from `agentic_devdocs`
+- code structure and implementation context from `agentic_indexer`
+- page/workflow/site context from `agentic_sitemap`
+
+It is most useful when one task spans more than one of those sources and you want one stable JSON response instead of manually calling each tool.
+
+Do not use it when you need:
+
+- file edits or code execution
+- autonomous planning
+- a long-running workflow engine
+- a replacement for the sibling tools themselves
+
+## Relationship To The Sibling Tools
+
+- `agentic_devdocs`: finds Moodle docs sections, docs-derived file anchors, and conceptual guidance
+- `agentic_indexer`: finds files, symbols, context bundles, and implementation companions in the local code index
+- `agentic_sitemap`: finds Moodle page types, workflow edges, and site context from a local sitemap run
+- `agentic_orchestrator`: decides which of those tools to call, validates their outer runtime envelopes, and assembles the grouped result into one response
+
+## Quickstart
+
+### Human Quickstart
+
+1. Create a local virtual environment and install the package:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+```
+
+2. Make sure the sibling tools are available locally and already have their required resources:
+
+- `agentic_devdocs` with a populated docs DB
+- `agentic_indexer` with a populated Moodle index DB
+- `agentic_sitemap` with a saved crawl/discovery run
+
+3. Copy the example config and point it at your local sibling-tool commands and resources:
+
+```bash
+cp config.example.toml config.local.toml
+```
+
+4. Run a first query:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
+  "add admin settings to a plugin" \
+  --config ./config.local.toml \
+  --json
+```
+
+5. Run the test suite before changing behavior:
+
+```bash
+python3 -m pytest
+```
+
+6. Generate a live review bundle when you need a verification artifact:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
+```
+
+### AI Worker Quickstart
+
+For a Codex-style worker or other AI assistant:
+
+1. Read this README first for scope and boundaries.
+2. Read [`AGENTS.md`](/Users/mattp/projects/agentic_orchestrator/AGENTS.md) for repo-specific commands and safety expectations.
+3. Use `config.local.toml` or `_smoke_test/live_config.toml` only if the local environment already has valid sibling-tool resources.
+4. Prefer deterministic tests (`python3 -m pytest`) before any live bundle run.
+5. Keep changes thin: routing, assembly, evaluation, docs, or review-bundle behavior only when clearly within scope.
+
 ## What It Is
 
 - A minimal orchestrator CLI
@@ -82,6 +160,17 @@ The orchestrator keeps grouped tool results and preserves provenance:
 
 ## Local Tool Configuration
 
+### Prerequisites
+
+You need all of the following available locally before a live run will work:
+
+- Python 3.11+ with `venv`
+- this repo installed in a local virtual environment
+- a working local checkout of each sibling tool
+- a populated `agentic_devdocs` DB
+- a populated `agentic_indexer` DB
+- a saved `agentic_sitemap` run directory
+
 Configuration is explicit and local. You can provide it with a TOML file, CLI flags, and environment variables.
 
 The recommended approach is a config file like [`config.example.toml`](/Users/mattp/projects/agentic_orchestrator/config.example.toml).
@@ -108,6 +197,14 @@ CLI and environment variable overrides are also supported:
 - `--devdocs-db-path`, `--indexer-db-path`, `--sitemap-run-dir`
 
 The orchestrator fails clearly when a configured command is missing, not executable, or missing required resource paths.
+
+Typical local setup steps:
+
+1. point each `[tools.*]` section at the sibling tool executable
+2. set `workdir` if the tool expects repo-relative behavior
+3. add `extra_args` only when needed, for example `["-m", "agentic_docs.cli"]`
+4. set the `resources` paths to the real docs DB, index DB, and sitemap run
+5. run a JSON query and then the test suite
 
 ## Route Modes
 
@@ -277,6 +374,13 @@ agentic-orchestrator query "How should this render in Moodle?" \
   --json
 ```
 
+Safe local verification loop:
+
+```bash
+python3 -m pytest
+PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
+```
+
 ## Review Bundle
 
 The review bundle now focuses on task-level context usefulness while still reporting routing stability. It prefers real sibling-tool execution when valid config is present.
@@ -318,3 +422,4 @@ It also reports whether each task context was `COMPLETE`, `PARTIAL`, or `INSUFFI
 - A broader routing eval can expose honest ambiguity or weakness without implying the sibling tools themselves failed
 - Generic low-signal questions still fall back to `docs + code`
 - The orchestrator remains a context assembler rather than a planner
+- Live review runs depend on locally valid sibling-tool resources; the unit tests stay deterministic by mocking subprocess output where appropriate

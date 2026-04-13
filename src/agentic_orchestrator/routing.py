@@ -67,6 +67,8 @@ def route_query(
 
 
 def _task_route(query: str, context: dict[str, Any], task_type: str, normalized: str) -> RoutingDecision:
+    """Apply the narrow task-family routing rules used for known Moodle tasks."""
+
     routing_notes: list[str] = [f"task_type={task_type}", "route_mode=task"]
     routing_reasons: list[str] = []
     explicit_component = context.get("component_hint")
@@ -144,6 +146,8 @@ def _task_route(query: str, context: dict[str, Any], task_type: str, normalized:
 
 
 def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized: str) -> RoutingDecision:
+    """Apply the broader but still explicit heuristic routing mode."""
+
     routing_notes: list[str] = [f"task_type={task_type}", "route_mode=auto"]
     explicit_component = context.get("component_hint")
     explicit_symbol = context.get("symbol")
@@ -185,6 +189,8 @@ def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized:
 
 
 def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_tools: list[str]) -> RoutingDecision:
+    """Honor explicit user-selected tool choices without extra inference."""
+
     explicit_component = context.get("component_hint")
     explicit_symbol = context.get("symbol")
     inferred_symbol = _infer_symbol_query(query)
@@ -226,6 +232,8 @@ def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_to
 
 
 def _analyze_auto_routing(query: str, normalized: str, context: dict[str, Any], task_type: str) -> AutoRoutingSignals:
+    """Evaluate lightweight signal families for the `auto` routing mode."""
+
     reasons: list[str] = []
     explicit_symbol = context.get("symbol")
     explicit_site_lookup = context.get("site_lookup")
@@ -408,6 +416,8 @@ def _code_request(
     task_type: str,
     reason: str | None = None,
 ) -> ToolRequest:
+    """Build the indexer request, including narrow render symbol/file handling."""
+
     if explicit_symbol:
         return ToolRequest(
             tool_name="agentic_indexer",
@@ -439,6 +449,8 @@ def _code_request(
 
 
 def _classify_task_type(normalized_query: str) -> str:
+    """Map a query into a coarse task family used by routing and diagnostics."""
+
     if "settings" in normalized_query and "plugin" in normalized_query:
         return "admin_settings"
     if "scheduled task" in normalized_query or ("task" in normalized_query and "register" in normalized_query):
@@ -459,6 +471,8 @@ def _classify_task_type(normalized_query: str) -> str:
 
 
 def _infer_symbol_query(query: str) -> str | None:
+    """Recognize literal symbol-shaped queries without broad code-domain inference."""
+
     value = query.strip()
     if "\\" in value and " " not in value:
         return value
@@ -468,6 +482,8 @@ def _infer_symbol_query(query: str) -> str | None:
 
 
 def _infer_file_query(query: str) -> str | None:
+    """Recognize literal file-path queries that are safe to route directly."""
+
     value = query.strip()
     if " " in value:
         return None
@@ -477,6 +493,8 @@ def _infer_file_query(query: str) -> str | None:
 
 
 def _is_render_code_anchor(query: str) -> bool:
+    """Detect narrow render/output code anchors that merit code-first handling."""
+
     normalized = normalize_query(query)
     raw = query.strip().lower()
     return any(

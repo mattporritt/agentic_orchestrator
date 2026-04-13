@@ -47,6 +47,9 @@ sitemap_run_dir = "{run_dir}"
 
 
 def test_generate_review_bundle_can_use_mock_fallback(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "README.md").write_text("# Readme\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
+    (tmp_path / "CONTRIBUTING.md").write_text("# Contributing\n", encoding="utf-8")
     monkeypatch.setattr("agentic_orchestrator.review_bundle.resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(
         "agentic_orchestrator.review_bundle._write_command_output",
@@ -64,3 +67,8 @@ def test_generate_review_bundle_can_use_mock_fallback(tmp_path: Path, monkeypatc
     assert "summary" in task_eval
     assert (bundle_dir / "mode_comparison.md").exists()
     assert (bundle_dir / "task_eval.txt").exists()
+    assert (bundle_dir / "README.snapshot.md").exists()
+    assert (bundle_dir / "AGENTS.md").exists()
+    assert (bundle_dir / "CONTRIBUTING.md").exists()
+    assert (bundle_dir / "docs-checklist.md").exists()
+    assert (bundle_dir / "refactor-map.md").exists()
