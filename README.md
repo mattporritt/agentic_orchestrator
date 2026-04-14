@@ -249,6 +249,57 @@ What it does not check:
 - historical drift over time
 - full eval reruns unless `--deep` is requested
 
+Practical examples:
+
+- `OK`: all tool paths resolve, configured resources exist, and each sibling tool returns a valid runtime envelope for its sanity call
+- `WARNING`: a resource such as the index DB or sitemap run still exists but is older than the conservative freshness threshold
+- `FAIL`: a tool path is missing, a required resource path is absent, or a sibling tool returns malformed/non-zero contract output
+
+## Pilot Trials
+
+Use the pilot harness to record supervised real development-task runs in a lightweight file-based format.
+
+Run a pilot trial:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli pilot-run \
+  "add admin settings to a plugin" \
+  --config ./config.local.toml \
+  --task-label admin_settings \
+  --notes "first supervised plugin settings trial"
+```
+
+Add or update the human review outcome later:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli pilot-review \
+  20260414_101500_add-admin-settings-to-a-plugin \
+  --outcome useful \
+  --review-notes "helped find settings.php quickly" \
+  --helped-find-right-files yes \
+  --helped-find-right-docs yes
+```
+
+Summarize recorded pilot trials:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli pilot-report
+```
+
+Pilot artifacts are lightweight and file-based under `/_smoke_test/pilot_runs` by default. Each trial directory contains:
+
+- `trial.json`: full structured record including the orchestrator output
+- `summary.md`: compact human-readable trial summary
+
+Outcome values stay intentionally small:
+
+- `useful`
+- `partially_useful`
+- `misleading`
+- `not_reviewed`
+
+The pilot harness is for supervised usage tracking, not experiment-platform infrastructure. It helps record what was run, what context was returned, and whether a human reviewer found it helpful.
+
 ## Route Modes
 
 Routing stays explicit and inspectable.
@@ -449,14 +500,22 @@ The review bundle includes:
 - `routing_eval.txt`
 - `mode_comparison.json`
 - `mode_comparison.md`
+- `health.json`
+- `health.txt`
+- `health_warning.json`
+- `health_failure.json`
+- `pilot_report.json`
+- `pilot_report.txt`
 - example orchestrator outputs for the selected task cases
-- `config-used.json`
+- example pilot trial artifacts under `pilot_trials/`
+- `config_used.json`
 - `pytest.txt`
-- `git-status.txt`
-- `git-commit.txt`
+- `git_status.txt`
+- `git_commit.txt`
 
 The summary explicitly states whether the review used `real_local_tools` or `mock_fallback`.
 It also reports whether each task context was `COMPLETE`, `PARTIAL`, or `INSUFFICIENT`, together with missing-signal and noise diagnostics.
+Generated artifact names now consistently prefer underscore-separated filenames such as `git_status.txt` and `config_used.json`.
 
 ## Current Limitations
 

@@ -14,6 +14,7 @@ from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
 from agentic_orchestrator.errors import ConfigurationError
 from agentic_orchestrator.health import collect_health_report, render_health_text
 from agentic_orchestrator.orchestrator import OrchestratorService
+from agentic_orchestrator.pilot import collect_pilot_report, create_pilot_trial, render_pilot_report_text
 from agentic_orchestrator.review_reporting import (
     build_review_summary,
     render_mode_comparison_markdown,
@@ -224,6 +225,8 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     task_cases = load_task_eval_cases()
     task_evaluation = evaluate_task_outputs(service, cases=task_cases)
     health_report = collect_health_report(config, runner=runtime.runner, deep=False)
+    warning_health_report = _simulated_health_report(health_report, status="WARNING")
+    failure_health_report = _simulated_health_report(health_report, status="FAIL")
 
     for case_result in routing_evaluation["cases"]:
         slug = case_result["case_id"]
@@ -263,15 +266,19 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     (bundle_dir / "task_eval.txt").write_text(render_task_eval_text(task_eval_payload), encoding="utf-8")
     (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "mode_comparison.md").write_text(render_mode_comparison_markdown(comparisons), encoding="utf-8")
-    (bundle_dir / "config-used.json").write_text(json.dumps(sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "config_used.json").write_text(json.dumps(sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "health.json").write_text(json.dumps(serializable_health_report(health_report), indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "health.txt").write_text(render_health_text(health_report), encoding="utf-8")
-    (bundle_dir / "README.snapshot.md").write_text((repo_root / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
+    (bundle_dir / "health_warning.json").write_text(json.dumps(serializable_health_report(warning_health_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "health_warning.txt").write_text(render_health_text(warning_health_report), encoding="utf-8")
+    (bundle_dir / "health_failure.json").write_text(json.dumps(serializable_health_report(failure_health_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "health_failure.txt").write_text(render_health_text(failure_health_report), encoding="utf-8")
+    (bundle_dir / "README_snapshot.md").write_text((repo_root / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
     for doc_name in ("AGENTS.md", "CONTRIBUTING.md"):
         doc_path = repo_root / doc_name
         if doc_path.exists():
             (bundle_dir / doc_name).write_text(doc_path.read_text(encoding="utf-8"), encoding="utf-8")
-    (bundle_dir / "docs-checklist.md").write_text(
+    (bundle_dir / "docs_checklist.md").write_text(
         "\n".join(
             [
                 "# Docs Checklist",
@@ -285,7 +292,7 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         + "\n",
         encoding="utf-8",
     )
-    (bundle_dir / "refactor-map.md").write_text(
+    (bundle_dir / "refactor_map.md").write_text(
         "\n".join(
             [
                 "# Refactor Map",
@@ -299,23 +306,89 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         + "\n",
         encoding="utf-8",
     )
+    pilot_root = bundle_dir / "pilot_trials"
+    first_task_case = task_cases[0]
+    trial_dir = create_pilot_trial(
+        service,
+        config,
+        query=first_task_case.query,
+        route_mode=first_task_case.route_mode,
+        context=first_task_case.context,
+        task_label=first_task_case.id,
+        notes="review bundle sample trial",
+        pilot_root=str(pilot_root),
+        outcome="useful",
+        review_notes="Sample recorded supervised outcome for bundle review.",
+        did_it_help_find_right_files=True,
+        did_it_help_find_right_docs=True,
+    )
+    pilot_report = collect_pilot_report(pilot_root=str(pilot_root))
+    (bundle_dir / "pilot_report.txt").write_text(render_pilot_report_text(pilot_report), encoding="utf-8")
+    (bundle_dir / "pilot_report.json").write_text(json.dumps(pilot_report, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "summary.md").write_text(
-        build_review_summary(
-            bundle_dir=bundle_dir,
-            runtime_mode=runtime.execution_mode,
-            config_path=config_path,
-            config=config,
-            task_evaluation=task_evaluation,
-            routing_evaluation=routing_evaluation,
-            health_report=health_report,
+        _augment_summary(
+            build_review_summary(
+                bundle_dir=bundle_dir,
+                runtime_mode=runtime.execution_mode,
+                config_path=config_path,
+                config=config,
+                task_evaluation=task_evaluation,
+                routing_evaluation=routing_evaluation,
+                health_report=health_report,
+            ),
+            warning_example_path=bundle_dir / "health_warning.txt",
+            failure_example_path=bundle_dir / "health_failure.txt",
+            pilot_trial_dir=trial_dir,
+            pilot_report_path=bundle_dir / "pilot_report.txt",
         ),
         encoding="utf-8",
     )
 
     _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
-    _write_command_output(bundle_dir / "git-status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
-    _write_command_output(bundle_dir / "git-commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
+    _write_command_output(bundle_dir / "git_status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)
+    _write_command_output(bundle_dir / "git_commit.txt", ["git", "rev-parse", "HEAD"], cwd=repo_root, allow_failure=True)
     return bundle_dir
+
+
+def _simulated_health_report(report: dict[str, object], *, status: str) -> dict[str, object]:
+    """Create a compact example warning/failure report for bundle reviewers."""
+
+    cloned = json.loads(json.dumps(report))
+    if status == "WARNING":
+        cloned["overall_status"] = "WARNING"
+        for check in cloned["checks"]:
+            if check["name"] == "resource.indexer_db":
+                check["status"] = "WARNING"
+                check["summary"] = "resource exists but appears stale"
+                break
+        return cloned
+    cloned["overall_status"] = "FAIL"
+    for check in cloned["checks"]:
+        if check["name"] == "contract.agentic_indexer":
+            check["status"] = "FAIL"
+            check["summary"] = "agentic_indexer returned malformed contract JSON"
+            break
+    return cloned
+
+
+def _augment_summary(
+    base_summary: str,
+    *,
+    warning_example_path: Path,
+    failure_example_path: Path,
+    pilot_trial_dir: Path,
+    pilot_report_path: Path,
+) -> str:
+    return (
+        base_summary
+        + "\n## Operational Cleanup\n\n"
+        + "- Standardized bundle file naming toward underscore-separated artifacts such as `git_status.txt`, `git_commit.txt`, and `config_used.json`\n"
+        + f"- Warning health example: `{warning_example_path.name}`\n"
+        + f"- Failure health example: `{failure_example_path.name}`\n"
+        + "\n## Pilot Harness\n\n"
+        + f"- Example pilot trial directory: `{pilot_trial_dir.name}`\n"
+        + f"- Pilot report output: `{pilot_report_path.name}`\n"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

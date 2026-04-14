@@ -186,3 +186,21 @@ def test_render_health_text_includes_summary_and_notes() -> None:
     assert "Overall: WARNING" in text
     assert "[WARNING] resource.indexer_db: stale" in text
     assert "- example note" in text
+
+
+def test_collect_health_report_surfaces_mixed_ok_warning_fail_statuses(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    old_time = datetime.now(UTC) - timedelta(days=60)
+    os.utime(config.devdocs_db_path, (old_time.timestamp(), old_time.timestamp()))
+
+    def mixed_runner(*, args, text, capture_output, check, cwd=None, env=None):
+        del text, capture_output, check, cwd, env
+        if "runtime-query" in args:
+            return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="boom")
+        return _runner_for_contracts(args=args, text=True, capture_output=True, check=False)
+
+    report = collect_health_report(config, runner=mixed_runner)
+    checks = {check["name"]: check for check in report["checks"]}
+    statuses = {checks["tool.agentic_devdocs"]["status"], checks["resource.devdocs_db"]["status"], checks["contract.agentic_sitemap"]["status"]}
+    assert report["overall_status"] == "FAIL"
+    assert statuses == {"OK", "WARNING", "FAIL"}
