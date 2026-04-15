@@ -220,8 +220,9 @@ Typical local setup steps:
 1. point each `[tools.*]` section at the sibling tool executable
 2. set `workdir` if the tool expects repo-relative behavior
 3. add `extra_args` only when needed, for example `["-m", "agentic_docs.cli"]`
-4. set the `resources` paths to the real docs DB, index DB, and sitemap run
-5. run a JSON query and then the test suite
+4. for `agentic_debug`, point `command` directly at `bin/moodle-debug` in the local repo checkout; the default install already provides that executable, so the example config does not wrap it with `php`
+5. set the `resources` paths to the real docs DB, index DB, and sitemap run
+6. run a JSON query and then the test suite
 
 ## Runtime Health / Drift Command
 
