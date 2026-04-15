@@ -1,10 +1,11 @@
 # agentic_orchestrator
 
-`agentic_orchestrator` is a thin context-assembly layer over three existing runtime-facing tools:
+`agentic_orchestrator` is a thin context-assembly layer over four existing runtime-facing tools:
 
 - `agentic_devdocs`
 - `agentic_indexer`
 - `agentic_sitemap`
+- `agentic_debug`
 
 It stays intentionally narrow. It calls those tools in their existing CLI JSON-contract modes, validates the shared outer envelope shape, and merges the resulting docs/code/site context into a single runtime-facing response for a coding agent to consume.
 
@@ -15,6 +16,7 @@ Use the orchestrator when a human developer or coding agent needs a compact, pro
 - documentation and policy guidance from `agentic_devdocs`
 - code structure and implementation context from `agentic_indexer`
 - page/workflow/site context from `agentic_sitemap`
+- explicit bounded debug planning/interpretation/execution context from `agentic_debug`
 
 It is most useful when one task spans more than one of those sources and you want one stable JSON response instead of manually calling each tool.
 
@@ -30,7 +32,8 @@ Do not use it when you need:
 - `agentic_devdocs`: finds Moodle docs sections, docs-derived file anchors, and conceptual guidance
 - `agentic_indexer`: finds files, symbols, context bundles, and implementation companions in the local code index
 - `agentic_sitemap`: finds Moodle page types, workflow edges, and site context from a local sitemap run
-- `agentic_orchestrator`: decides which of those tools to call, validates their outer runtime envelopes, and assembles the grouped result into one response
+- `agentic_debug`: handles bounded debugger runtime plans, session interpretation/retrieval, explicit execution, and debugger health checks
+- `agentic_orchestrator`: decides which of those tools to call, validates their runtime envelopes, and assembles the grouped result into one response
 
 ## Quickstart
 
@@ -48,6 +51,7 @@ python3 -m venv .venv
 - `agentic_devdocs` with a populated docs DB
 - `agentic_indexer` with a populated Moodle index DB
 - `agentic_sitemap` with a saved crawl/discovery run
+- `agentic_debug` with a working local runtime CLI when you want debug-task integration
 
 3. Copy the example config and point it at your local sibling-tool commands and resources:
 
@@ -97,11 +101,12 @@ For a Codex-style worker or other AI assistant:
 ## What It Is
 
 - A minimal orchestrator CLI
-- A local subprocess wrapper around the three sibling tools
+- A local subprocess wrapper around the sibling tools
 - A versioned orchestrator runtime contract
 - Explicit routing modes: `task`, `auto`, `manual`
 - A provenance-preserving context assembler
 - A lightweight routing evaluation loop for `auto`
+- A conservative bounded debugger integration for explicit debug task families
 
 ## What It Is Not
 
@@ -111,6 +116,7 @@ For a Codex-style worker or other AI assistant:
 - Not a web service or UI
 - Not a database-backed framework
 - Not an LLM-calling system
+- Not a vague auto-debugger for general bug reports
 
 ## Runtime Contract
 
@@ -141,6 +147,7 @@ The orchestrator keeps the same outer envelope shape as the sibling tools:
         "docs_results": [],
         "code_results": [],
         "site_results": [],
+        "debug_results": [],
         "suggested_next_steps": [],
         "summary": "Combined context from 2 tool(s)."
       },
@@ -162,6 +169,7 @@ The orchestrator keeps grouped tool results and preserves provenance:
 - `docs_results`
 - `code_results`
 - `site_results`
+- `debug_results`
 - `suggested_next_steps`
 - `summary`
 - `diagnostics.tools_called`
@@ -202,6 +210,7 @@ CLI and environment variable overrides are also supported:
 - `--devdocs-cmd`, `--devdocs-workdir`, `--devdocs-extra-args`
 - `--indexer-cmd`, `--indexer-workdir`, `--indexer-extra-args`
 - `--sitemap-cmd`, `--sitemap-workdir`, `--sitemap-extra-args`
+- `--debug-cmd`, `--debug-workdir`, `--debug-extra-args`
 - `--devdocs-db-path`, `--indexer-db-path`, `--sitemap-run-dir`
 
 The orchestrator fails clearly when a configured command is missing, not executable, or missing required resource paths.
@@ -342,6 +351,7 @@ Supported manual selections:
 - `docs`
 - `code`
 - `site`
+- `debug`
 - any combination of those three
 
 Examples:
@@ -351,6 +361,48 @@ agentic-orchestrator query "privacy providers" --route-mode manual --tools docs
 agentic-orchestrator query "render this page" --route-mode manual --tools code,site
 agentic-orchestrator query "general Moodle context" --route-mode manual --tools docs --tools code --json
 ```
+
+## Debugger Support
+
+`agentic_debug` is integrated conservatively. The orchestrator only routes to it for explicit bounded debug families:
+
+- interpret a stored debug session
+- get a stored debug session
+- plan debug for a PHPUnit selector
+- plan debug for an allowlisted CLI script
+- execute bounded debug for a PHPUnit selector
+- execute bounded debug for an allowlisted CLI script
+
+Safety boundary:
+
+- safe/proactive: `interpret_session`, `get_session`, `plan_phpunit`, `plan_cli`
+- explicit opt-in execution: `execute_phpunit`, `execute_cli`
+
+The orchestrator does not upgrade planning requests into execution, and it does not auto-route vague prompts like `debug this issue` into `agentic_debug`.
+
+Typical examples:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
+  "interpret this debug session mds_example_session_id" \
+  --config ./config.local.toml \
+  --route-mode task \
+  --json
+
+PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
+  "plan debug for this PHPUnit selector mod_assign\\tests\\grading_test::test_grade_submission" \
+  --config ./config.local.toml \
+  --route-mode task \
+  --json
+
+PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
+  "execute cli debug for admin/cli/some_script.php" \
+  --config ./config.local.toml \
+  --route-mode task \
+  --json
+```
+
+Debugger evidence is grouped under `debug_results` so the underlying runtime payload stays visible and traceable.
 
 ## Routing Evaluation
 

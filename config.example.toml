@@ -12,6 +12,11 @@ workdir = "/Users/you/projects/agentic_indexer"
 command = "/Users/you/projects/agentic_sitemap/.venv/bin/moodle-sitemap"
 workdir = "/Users/you/projects/agentic_sitemap"
 
+[tools.debug]
+command = "/usr/bin/php"
+workdir = "/Users/you/projects/agentic_debug"
+extra_args = ["/Users/you/projects/agentic_debug/bin/moodle-debug"]
+
 [resources]
 devdocs_db_path = "/Users/you/projects/agentic_devdocs/_smoke_test/agentic-docs.db"
 indexer_db_path = "/Users/you/projects/agentic_indexer/.db/moodle-index.sqlite"

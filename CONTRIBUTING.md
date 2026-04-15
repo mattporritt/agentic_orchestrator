@@ -11,6 +11,7 @@ This repo is a thin orchestration layer, so the best contributions usually:
 - improve diagnostics
 - simplify code structure
 - preserve existing contract and evaluation baselines
+- keep bounded debugger integration conservative and explicit
 
 ## Local Setup
 

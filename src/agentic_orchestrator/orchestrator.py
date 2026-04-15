@@ -1,4 +1,4 @@
-"""Thin orchestration service for combining docs, code, and site runtime outputs."""
+"""Thin orchestration service for combining docs, code, site, and debug runtime outputs."""
 
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ class OrchestratorService:
         docs_payload: dict[str, Any] | None = None
         code_payload: dict[str, Any] | None = None
         site_payload: dict[str, Any] | None = None
+        debug_payload: dict[str, Any] | None = None
         records: list[ToolCallRecord] = []
         failures: list[dict[str, str]] = []
         shaped_queries: list[dict[str, str]] = []
@@ -55,17 +56,20 @@ class OrchestratorService:
                 code_payload = payload
             elif effective_request.tool_name == "agentic_sitemap":
                 site_payload = payload
+            elif effective_request.tool_name == "agentic_debug":
+                debug_payload = payload
 
-        if not any((docs_payload, code_payload, site_payload)) and failures:
+        if not any((docs_payload, code_payload, site_payload, debug_payload)) and failures:
             messages = "; ".join(f"{item['tool']}: {item['error']}" for item in failures)
             raise ToolExecutionError(f"No tool calls succeeded. {messages}")
 
         docs_results = list((docs_payload or {}).get("results", []))
         code_results = list((code_payload or {}).get("results", []))
         site_results = list((site_payload or {}).get("results", []))
-        assembly = self._build_assembly_evidence(docs_results, code_results, site_results)
-        notes = self._build_notes(decision, docs_payload, code_payload, site_payload, failures)
-        summary = self._build_summary(docs_results, code_results, site_results, assembly["key_signals"])
+        debug_results = list((debug_payload or {}).get("results", []))
+        assembly = self._build_assembly_evidence(docs_results, code_results, site_results, debug_results)
+        notes = self._build_notes(decision, docs_payload, code_payload, site_payload, debug_payload, failures)
+        summary = self._build_summary(docs_results, code_results, site_results, debug_results, assembly["key_signals"])
         next_steps = assembly["suggested_next_steps"]
         intent = self._build_intent(decision)
         tools_called = [self._serialize_record(item) for item in records]
@@ -76,6 +80,7 @@ class OrchestratorService:
             docs_results=docs_results,
             code_results=code_results,
             site_results=site_results,
+            debug_results=debug_results,
             key_signals=assembly["key_signals"],
             tools_called=tools_called,
             suggested_next_steps=next_steps,
@@ -90,6 +95,9 @@ class OrchestratorService:
         diagnostics["assembly_notes"] = assembly["assembly_notes"]
         diagnostics["query_shaping_applied"] = bool(shaped_queries)
         diagnostics["shaped_queries"] = shaped_queries
+        diagnostics["debug_route_kind"] = decision.task_type if decision.debug_intent else None
+        diagnostics["debug_intent"] = decision.debug_intent
+        diagnostics["debug_execution_mode"] = decision.debug_execution_mode
         if code_payload is not None:
             diagnostics["code_signal_source"] = self._code_signal_source(code_payload)
         return payload
@@ -101,6 +109,10 @@ class OrchestratorService:
             return self.adapters.indexer.query(db_path=str(self.config.indexer_db_path or ""), request=request)
         if request.tool_name == "agentic_sitemap":
             return self.adapters.sitemap.query(run_dir=str(self.config.sitemap_run_dir or ""), request=request)
+        if request.tool_name == "agentic_debug":
+            if request.mode == "health":
+                return self.adapters.debug.health()
+            return self.adapters.debug.runtime_query(request=request)
         raise ValueError(f"Unsupported tool request for '{request.tool_name}'.")
 
     def _build_intent(self, decision: RoutingDecision) -> dict[str, Any]:
@@ -120,6 +132,7 @@ class OrchestratorService:
         docs_payload: dict[str, Any] | None,
         code_payload: dict[str, Any] | None,
         site_payload: dict[str, Any] | None,
+        debug_payload: dict[str, Any] | None,
         failures: list[dict[str, str]],
     ) -> list[str]:
         notes = [
@@ -131,6 +144,7 @@ class OrchestratorService:
             ("agentic_devdocs", docs_payload),
             ("agentic_indexer", code_payload),
             ("agentic_sitemap", site_payload),
+            ("agentic_debug", debug_payload),
         ):
             if payload is None:
                 continue
@@ -144,18 +158,20 @@ class OrchestratorService:
         docs_results: list[dict[str, Any]],
         code_results: list[dict[str, Any]],
         site_results: list[dict[str, Any]],
+        debug_results: list[dict[str, Any]],
         key_signals: list[dict[str, str]],
     ) -> str:
         parts = [
             f"docs={len(docs_results)}",
             f"code={len(code_results)}",
             f"site={len(site_results)}",
+            f"debug={len(debug_results)}",
         ]
         promoted = [signal["value"] for signal in key_signals[:4] if isinstance(signal.get("value"), str)]
         if promoted:
-            return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results))} tool(s) ({', '.join(parts)}). Key signals: {' | '.join(promoted)}"
+            return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results, debug_results))} tool(s) ({', '.join(parts)}). Key signals: {' | '.join(promoted)}"
         top_summaries: list[str] = []
-        for group in (docs_results, code_results, site_results):
+        for group in (docs_results, code_results, site_results, debug_results):
             if not group:
                 continue
             content = group[0].get("content", {})
@@ -163,14 +179,15 @@ class OrchestratorService:
             if isinstance(summary, str) and summary:
                 top_summaries.append(summary)
         if top_summaries:
-            return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results))} tool(s) ({', '.join(parts)}). Top signals: {' | '.join(top_summaries[:2])}"
-        return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results))} tool(s) ({', '.join(parts)})."
+            return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results, debug_results))} tool(s) ({', '.join(parts)}). Top signals: {' | '.join(top_summaries[:2])}"
+        return f"Combined context from {sum(bool(group) for group in (docs_results, code_results, site_results, debug_results))} tool(s) ({', '.join(parts)})."
 
     def _build_assembly_evidence(
         self,
         docs_results: list[dict[str, Any]],
         code_results: list[dict[str, Any]],
         site_results: list[dict[str, Any]],
+        debug_results: list[dict[str, Any]],
     ) -> dict[str, Any]:
         evidence: list[dict[str, str]] = []
         seen: set[tuple[str, str]] = set()
@@ -208,6 +225,36 @@ class OrchestratorService:
                     target_page_type = step.get("target_page_type")
                     if isinstance(target_page_type, str) and target_page_type:
                         self._add_evidence(evidence, seen, "inspect_page_type", target_page_type, "agentic_sitemap")
+
+        for result in debug_results[:3]:
+            content = result.get("content", {})
+            plan = content.get("plan", {})
+            validated_target = plan.get("validated_target", {})
+            normalized_test_ref = validated_target.get("normalized_test_ref")
+            script_path = validated_target.get("script_path")
+            if isinstance(normalized_test_ref, str) and normalized_test_ref:
+                self._add_evidence(evidence, seen, "inspect_symbol", normalized_test_ref, "agentic_debug")
+            if isinstance(script_path, str) and script_path:
+                self._add_evidence(evidence, seen, "inspect_file", script_path, "agentic_debug")
+            execution = plan.get("execution", {})
+            command = execution.get("command")
+            if isinstance(command, list) and command:
+                self._add_evidence(evidence, seen, "review_debug_command", " ".join(str(part) for part in command), "agentic_debug")
+            likely_fault = content.get("likely_fault", {})
+            file_path = likely_fault.get("file")
+            if isinstance(file_path, str) and file_path and not self._is_noisy_path(file_path):
+                self._add_evidence(evidence, seen, "inspect_file", file_path, "agentic_debug")
+            rerun_command = content.get("rerun_command")
+            if isinstance(rerun_command, str) and rerun_command:
+                self._add_evidence(evidence, seen, "review_debug_command", rerun_command, "agentic_debug")
+            for target in list(content.get("inspection_targets", []))[:3]:
+                if not isinstance(target, dict):
+                    continue
+                value = target.get("value") or target.get("path") or target.get("target")
+                kind = str(target.get("kind", "target"))
+                if isinstance(value, str) and value:
+                    evidence_kind = "inspect_file" if kind == "file" else "inspect_symbol"
+                    self._add_evidence(evidence, seen, evidence_kind, value, "agentic_debug")
 
         key_signals = self._balanced_evidence(evidence, limit=6)
         suggested_next_steps = self._balanced_evidence(evidence, limit=10)

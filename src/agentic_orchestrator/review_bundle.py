@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
+from agentic_orchestrator.debug_eval import evaluate_debug_routes, load_debug_eval_cases, render_debug_eval_text
 from agentic_orchestrator.errors import ConfigurationError
 from agentic_orchestrator.health import collect_health_report, render_health_text
 from agentic_orchestrator.orchestrator import OrchestratorService
@@ -122,6 +123,66 @@ def _mock_payload(tool: str, query: str) -> dict:
                 }
             ],
         }
+    if tool == "moodle_debug":
+        if " health " in f" {normalized} ":
+            return {
+                "tool": "moodle_debug",
+                "version": "runtime-v1",
+                "query": {"input": []},
+                "normalized_query": {"intent": "health"},
+                "intent": "health",
+                "results": [
+                    {
+                        "id": "health_report",
+                        "type": "health_report",
+                        "rank": 1,
+                        "confidence": "medium",
+                        "source": {"kind": "runtime", "profile_name": None, "session_id": None},
+                        "content": {"subsystems": [{"name": "config", "status": "ok", "message": "mock health"}]},
+                        "diagnostics": [],
+                    }
+                ],
+                "diagnostics": [],
+                "meta": {"status": "ok", "generated_at": "2026-04-15T00:00:00+00:00", "repo_root": "/mock/debug", "dry_run": True, "exit_code": 0},
+            }
+        intent = "interpret_session"
+        if "plan_phpunit" in normalized or ("plan debug" in normalized and "phpunit" in normalized):
+            intent = "plan_phpunit"
+        elif "plan_cli" in normalized or ("plan debug" in normalized and "cli" in normalized):
+            intent = "plan_cli"
+        elif "execute_phpunit" in normalized or "execute phpunit" in normalized:
+            intent = "execute_phpunit"
+        elif "execute_cli" in normalized or "execute cli" in normalized:
+            intent = "execute_cli"
+        elif "get_session" in normalized:
+            intent = "get_session"
+        result_type = "session_interpretation" if intent == "interpret_session" else "execution_plan"
+        return {
+            "tool": "moodle_debug",
+            "version": "runtime-v1",
+            "query": {"intent": intent, "raw_query": query},
+            "normalized_query": {"intent": intent},
+            "intent": intent,
+            "results": [
+                {
+                    "id": f"debug-{intent}",
+                    "type": result_type,
+                    "rank": 1,
+                    "confidence": "high",
+                    "source": {"kind": "runtime_profile", "profile_name": "mock", "session_id": "mds_example_session_id"},
+                    "content": {
+                        "summary": f"Mock debugger response for {intent}.",
+                        "likely_fault": {"file": "mod/assign/tests/grading_test.php"},
+                        "inspection_targets": [{"kind": "file", "value": "mod/assign/tests/grading_test.php"}],
+                        "rerun_command": "php bin/moodle-debug runtime-query --json '{...}'",
+                        "plan": {"validated_target": {"normalized_test_ref": "mod_assign\\tests\\grading_test::test_grade_submission"}},
+                    },
+                    "diagnostics": [],
+                }
+            ],
+            "diagnostics": [],
+            "meta": {"status": "ok", "generated_at": "2026-04-15T00:00:00+00:00", "repo_root": "/mock/debug", "dry_run": not intent.startswith("execute_"), "exit_code": 0},
+        }
     return {
         "tool": "agentic_sitemap",
         "version": "v1",
@@ -161,6 +222,8 @@ def _mock_runner(*, args, text, capture_output, check, cwd=None, env=None):
         payload = _mock_payload("agentic_indexer", query)
     elif tool == "mock-sitemap":
         payload = _mock_payload("agentic_sitemap", query or joined)
+    elif tool == "mock-debug":
+        payload = _mock_payload("moodle_debug", query or joined)
     else:
         raise FileNotFoundError(tool)
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
@@ -178,6 +241,9 @@ def default_mock_config() -> OrchestratorConfig:
             sitemap_cmd="/bin/sh",
             sitemap_workdir=None,
             sitemap_extra_args="mock-sitemap",
+            debug_cmd="/bin/sh",
+            debug_workdir=None,
+            debug_extra_args="mock-debug",
             devdocs_db_path="/mock/devdocs.sqlite",
             indexer_db_path="/mock/index.sqlite",
             sitemap_run_dir="/mock/sitemap-run",
@@ -225,6 +291,10 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     task_cases = load_task_eval_cases()
     task_evaluation = evaluate_task_outputs(service, cases=task_cases)
     health_report = collect_health_report(config, runner=runtime.runner, deep=False)
+    debug_evaluation = None
+    debug_cases = load_debug_eval_cases()
+    if config.debug.command:
+        debug_evaluation = evaluate_debug_routes(service, cases=debug_cases)
     warning_health_report = _simulated_health_report(health_report, status="WARNING")
     failure_health_report = _simulated_health_report(health_report, status="FAIL")
 
@@ -251,6 +321,11 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         payload = service.query(query=query, route_mode="task")
         (examples_dir / f"{slug}.task.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
+    if debug_evaluation is not None:
+        for case_result in debug_evaluation["cases"]:
+            slug = case_result["case_id"]
+            (examples_dir / f"{slug}.debug.json").write_text(json.dumps(case_result["payload"], indent=2, sort_keys=True), encoding="utf-8")
+
     for comparison in comparisons:
         case = next(item for item in routing_cases if item.id == comparison["case_id"])
         task_payload = service.query(query=case.query, context=case.context, route_mode="task")
@@ -264,6 +339,9 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     (bundle_dir / "routing_eval.txt").write_text(render_routing_eval_text(routing_eval_payload), encoding="utf-8")
     (bundle_dir / "task_eval.json").write_text(json.dumps(task_eval_payload, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "task_eval.txt").write_text(render_task_eval_text(task_eval_payload), encoding="utf-8")
+    if debug_evaluation is not None:
+        (bundle_dir / "debug_eval.json").write_text(json.dumps(debug_evaluation, indent=2, sort_keys=True), encoding="utf-8")
+        (bundle_dir / "debug_eval.txt").write_text(render_debug_eval_text(debug_evaluation), encoding="utf-8")
     (bundle_dir / "mode_comparison.json").write_text(json.dumps(comparisons, indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "mode_comparison.md").write_text(render_mode_comparison_markdown(comparisons), encoding="utf-8")
     (bundle_dir / "config_used.json").write_text(json.dumps(sanitized_config_report(config), indent=2, sort_keys=True), encoding="utf-8")
@@ -325,24 +403,29 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     pilot_report = collect_pilot_report(pilot_root=str(pilot_root))
     (bundle_dir / "pilot_report.txt").write_text(render_pilot_report_text(pilot_report), encoding="utf-8")
     (bundle_dir / "pilot_report.json").write_text(json.dumps(pilot_report, indent=2, sort_keys=True), encoding="utf-8")
-    (bundle_dir / "summary.md").write_text(
-        _augment_summary(
-            build_review_summary(
-                bundle_dir=bundle_dir,
-                runtime_mode=runtime.execution_mode,
-                config_path=config_path,
-                config=config,
-                task_evaluation=task_evaluation,
-                routing_evaluation=routing_evaluation,
-                health_report=health_report,
-            ),
-            warning_example_path=bundle_dir / "health_warning.txt",
-            failure_example_path=bundle_dir / "health_failure.txt",
-            pilot_trial_dir=trial_dir,
-            pilot_report_path=bundle_dir / "pilot_report.txt",
+    summary_text = _augment_summary(
+        build_review_summary(
+            bundle_dir=bundle_dir,
+            runtime_mode=runtime.execution_mode,
+            config_path=config_path,
+            config=config,
+            task_evaluation=task_evaluation,
+            routing_evaluation=routing_evaluation,
+            health_report=health_report,
         ),
-        encoding="utf-8",
+        warning_example_path=bundle_dir / "health_warning.txt",
+        failure_example_path=bundle_dir / "health_failure.txt",
+        pilot_trial_dir=trial_dir,
+        pilot_report_path=bundle_dir / "pilot_report.txt",
     )
+    if debug_evaluation is not None:
+        summary_text += (
+            "\n## Debugger Integration\n\n"
+            + f"- Debug eval summary: correct={debug_evaluation['summary']['CORRECT']}, wrong={debug_evaluation['summary']['WRONG']}\n"
+            + "- Supported explicit routes: interpret session, get session, plan phpunit, plan cli, execute phpunit, execute cli\n"
+            + "- `debug_results` are grouped separately so debugger provenance stays visible\n"
+        )
+    (bundle_dir / "summary.md").write_text(summary_text, encoding="utf-8")
 
     _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
     _write_command_output(bundle_dir / "git_status.txt", ["git", "status", "--short", "--branch"], cwd=repo_root)

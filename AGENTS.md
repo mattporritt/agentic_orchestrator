@@ -7,6 +7,7 @@
 - `agentic_devdocs`
 - `agentic_indexer`
 - `agentic_sitemap`
+- `agentic_debug`
 
 and merges their runtime-contract outputs into one grouped response for a coding agent or human reviewer.
 
@@ -60,6 +61,7 @@ PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.l
 - `src/agentic_orchestrator/review_reporting.py`: summary/serialization helpers for bundle output
 - `src/agentic_orchestrator/health.py`: local runtime health, recency, and drift checks
 - `src/agentic_orchestrator/pilot.py`: lightweight supervised pilot trial recording and reporting
+- `src/agentic_orchestrator/debug_eval.py`: conservative debugger-route evaluation slice
 
 ## Safe Change Pattern
 

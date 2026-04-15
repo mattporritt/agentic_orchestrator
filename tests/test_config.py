@@ -29,6 +29,9 @@ command = "{executable}"
 [tools.sitemap]
 command = "{executable}"
 
+[tools.debug]
+command = "{executable}"
+
 [resources]
 devdocs_db_path = "{tmp_path / 'docs.db'}"
 indexer_db_path = "{tmp_path / 'index.db'}"
@@ -42,6 +45,7 @@ sitemap_run_dir = "{tmp_path / 'run'}"
     assert config.devdocs.extra_args == ["-m", "agentic_docs.cli"]
     assert config.devdocs.workdir == str(tmp_path)
     assert config.devdocs_db_path == str(tmp_path / "docs.db")
+    assert config.debug.command == [str(executable)]
 
 
 def test_tool_validation_fails_clearly_for_missing_command() -> None:
@@ -51,8 +55,8 @@ def test_tool_validation_fails_clearly_for_missing_command() -> None:
 
 
 def test_manual_tool_parsing_supports_comma_separated_and_repeated_values() -> None:
-    parsed = parse_manual_tools(["docs,code", "site"])
-    assert parsed == ["agentic_devdocs", "agentic_indexer", "agentic_sitemap"]
+    parsed = parse_manual_tools(["docs,code", "site,debug"])
+    assert parsed == ["agentic_devdocs", "agentic_indexer", "agentic_sitemap", "agentic_debug"]
 
 
 def test_args_override_file_values(tmp_path: Path) -> None:
@@ -81,6 +85,9 @@ command = "moodle-sitemap"
         sitemap_cmd=None,
         sitemap_workdir=None,
         sitemap_extra_args=None,
+        debug_cmd=None,
+        debug_workdir=None,
+        debug_extra_args=None,
         devdocs_db_path=None,
         indexer_db_path=None,
         sitemap_run_dir=None,
@@ -105,6 +112,9 @@ def test_validate_required_resources_fails_when_indexer_db_missing(tmp_path: Pat
             sitemap_cmd=str(executable),
             sitemap_workdir=None,
             sitemap_extra_args=None,
+            debug_cmd=None,
+            debug_workdir=None,
+            debug_extra_args=None,
             devdocs_db_path="/tmp/devdocs.sqlite",
             indexer_db_path=None,
             sitemap_run_dir="/tmp/run",

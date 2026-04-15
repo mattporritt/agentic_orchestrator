@@ -87,3 +87,26 @@ def test_task_routing_recognizes_render_file_query_as_code_anchor() -> None:
     assert decision.task_type == "render_ui"
     assert [tool.tool_name for tool in decision.tools] == ["agentic_indexer"]
     assert decision.tools[0].file == "mod/assign/locallib.php"
+
+
+def test_task_routing_supports_explicit_debug_session_interpretation() -> None:
+    decision = route_query("interpret this debug session mds_example_session_id", route_mode="task")
+    assert decision.task_type == "debug_interpret_session"
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_debug"]
+    assert decision.debug_intent == "interpret_session"
+    assert decision.debug_execution_mode == "safe"
+
+
+def test_task_routing_supports_explicit_phpunit_debug_execution_only_when_requested() -> None:
+    decision = route_query(
+        "execute phpunit debug for mod_assign\\tests\\grading_test::test_grade_submission",
+        route_mode="task",
+    )
+    assert [tool.tool_name for tool in decision.tools] == ["agentic_debug"]
+    assert decision.debug_intent == "execute_phpunit"
+    assert decision.debug_execution_mode == "execute"
+
+
+def test_auto_routing_does_not_upgrade_vague_debug_query_into_debugger_execution() -> None:
+    decision = route_query("debug this issue for me", route_mode="auto")
+    assert "agentic_debug" not in [tool.tool_name for tool in decision.tools]

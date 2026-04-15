@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_orchestrator.adapters import DevdocsAdapter, IndexerAdapter, SitemapAdapter
+from agentic_orchestrator.adapters import DebugAdapter, DevdocsAdapter, IndexerAdapter, SitemapAdapter
 from agentic_orchestrator.config import ToolCommandConfig
 from agentic_orchestrator.errors import ConfigurationError, ContractValidationError, ToolExecutionError
 from agentic_orchestrator.routing import ToolRequest
@@ -165,3 +165,55 @@ def test_adapter_surfaces_nonzero_exit_clearly(tmp_path: Path) -> None:
     )
     with pytest.raises(ToolExecutionError, match="exit code 2"):
         adapter.query(db_path="/tmp/devdocs.sqlite", query="docs query")
+
+
+def test_debug_adapter_parses_runtime_query_contract(tmp_path: Path) -> None:
+    payload = {
+        "tool": "moodle_debug",
+        "version": "runtime-v1",
+        "query": {"intent": "plan_phpunit"},
+        "normalized_query": {"intent": "plan_phpunit"},
+        "intent": "plan_phpunit",
+        "results": [
+            {
+                "id": "debug-1",
+                "type": "execution_plan",
+                "rank": 1,
+                "confidence": "high",
+                "source": {"kind": "runtime_profile", "profile_name": "default_phpunit", "session_id": None},
+                "content": {"plan": {"validated_target": {"normalized_test_ref": "mod_assign\\tests\\grading_test::test_grade_submission"}}},
+                "diagnostics": [],
+            }
+        ],
+        "diagnostics": [],
+        "meta": {"status": "warn", "generated_at": "2026-04-15T00:00:00+00:00", "repo_root": "/tmp/debug", "dry_run": True, "exit_code": 0},
+    }
+    seen: dict[str, object] = {}
+
+    def runner(**kwargs):
+        seen.update(kwargs)
+        return _completed(payload)
+
+    adapter = DebugAdapter(
+        tool_config=ToolCommandConfig(name="agentic_debug", command=[_make_executable(tmp_path)]),
+        runner=runner,
+    )
+    parsed = adapter.runtime_query(
+        request=ToolRequest(
+            tool_name="agentic_debug",
+            reason="test",
+            mode="runtime-query",
+            payload={"intent": "plan_phpunit", "test_ref": "mod_assign\\tests\\grading_test::test_grade_submission"},
+        )
+    )
+    assert parsed["tool"] == "moodle_debug"
+    assert "--json" in seen["args"]
+
+
+def test_debug_adapter_rejects_malformed_runtime_contract(tmp_path: Path) -> None:
+    adapter = DebugAdapter(
+        tool_config=ToolCommandConfig(name="agentic_debug", command=[_make_executable(tmp_path)]),
+        runner=lambda **kwargs: _completed({"tool": "moodle_debug", "version": "runtime-v1"}),
+    )
+    with pytest.raises(ToolExecutionError, match="missing required field"):
+        adapter.health()

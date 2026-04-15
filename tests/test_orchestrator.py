@@ -67,6 +67,48 @@ def _payload(tool: str, query: str, file_value: str) -> dict:
                 }
             ],
         }
+    if tool == "moodle_debug":
+        intent = "interpret_session"
+        if "phpunit" in query.lower() and "execute" in query.lower():
+            intent = "execute_phpunit"
+        elif "phpunit" in query.lower():
+            intent = "plan_phpunit"
+        elif "cli" in query.lower() and "execute" in query.lower():
+            intent = "execute_cli"
+        elif "cli" in query.lower():
+            intent = "plan_cli"
+        return {
+            "tool": "moodle_debug",
+            "version": "runtime-v1",
+            "query": {"intent": intent, "raw_query": query},
+            "normalized_query": {"intent": intent},
+            "intent": intent,
+            "results": [
+                {
+                    "id": "debug-1",
+                    "type": "execution_plan" if intent.startswith(("plan_", "execute_")) else "session_interpretation",
+                    "rank": 1,
+                    "confidence": "high",
+                    "source": {"kind": "runtime_profile", "profile_name": "mock", "session_id": "mds_example_session_id"},
+                    "content": {
+                        "summary": "Debug summary",
+                        "plan": {
+                            "validated_target": {
+                                "normalized_test_ref": "mod_assign\\tests\\grading_test::test_grade_submission",
+                                "script_path": "admin/cli/some_script.php",
+                            },
+                            "execution": {"command": ["php", "vendor/bin/phpunit"]},
+                        },
+                        "likely_fault": {"file": "mod/assign/tests/grading_test.php"},
+                        "inspection_targets": [{"kind": "file", "value": "mod/assign/tests/grading_test.php"}],
+                        "rerun_command": "php bin/moodle-debug runtime-query --json '{...}'",
+                    },
+                    "diagnostics": [],
+                }
+            ],
+            "diagnostics": [],
+            "meta": {"status": "ok", "generated_at": "2026-04-15T00:00:00+00:00", "repo_root": "/tmp/debug", "dry_run": not intent.startswith("execute_"), "exit_code": 0},
+        }
     return {
         "tool": tool,
         "version": "v1",
@@ -113,6 +155,9 @@ def _runner(*, args, text, capture_output, check, cwd=None, env=None):
             query = args[args.index("--symbol") + 1]
             file_value = "mod/assign/classes/output/grading_app.php"
         payload = _payload("agentic_indexer", query, file_value)
+    elif tool_tag == "mock-debug":
+        query = args[args.index("--json") + 1]
+        payload = _payload("moodle_debug", query, "")
     else:
         payload = _payload("agentic_sitemap", args[args.index("--query") + 1], "/course/view.php")
     return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
@@ -132,6 +177,9 @@ def _config() -> OrchestratorConfig:
             sitemap_cmd=executable,
             sitemap_workdir=None,
             sitemap_extra_args="mock-sitemap",
+            debug_cmd=executable,
+            debug_workdir=None,
+            debug_extra_args="mock-debug",
             devdocs_db_path="/tmp/devdocs.sqlite",
             indexer_db_path="/tmp/index.sqlite",
             sitemap_run_dir="/tmp/sitemap-run",
@@ -225,3 +273,19 @@ def test_orchestrator_balances_render_next_steps_across_tools() -> None:
     assert "agentic_devdocs" in sources
     assert "agentic_indexer" in sources
     assert "agentic_sitemap" in sources
+
+
+def test_orchestrator_groups_debug_results_separately_and_preserves_boundary() -> None:
+    service = OrchestratorService.from_config(_config(), runner=_runner)
+    payload = service.query(
+        query="plan debug for this PHPUnit selector mod_assign\\tests\\grading_test::test_grade_submission",
+        route_mode="task",
+    )
+    result = payload["results"][0]
+    assert result["content"]["docs_results"] == []
+    assert result["content"]["code_results"] == []
+    assert result["content"]["site_results"] == []
+    assert len(result["content"]["debug_results"]) == 1
+    assert result["diagnostics"]["debug_intent"] == "plan_phpunit"
+    assert result["diagnostics"]["debug_execution_mode"] == "safe"
+    assert any(step["source_tool"] == "agentic_debug" for step in result["content"]["suggested_next_steps"])

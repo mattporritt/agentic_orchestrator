@@ -20,6 +20,7 @@ class ToolRequest:
     lookup_mode: str | None = None
     from_page: str | None = None
     to_page: str | None = None
+    payload: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class RoutingDecision:
     routing_notes: list[str]
     manual_tools: list[str]
     routing_reasons: list[str]
+    debug_intent: str | None = None
+    debug_execution_mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,8 +80,24 @@ def _task_route(query: str, context: dict[str, Any], task_type: str, normalized:
     inferred_symbol = _infer_symbol_query(query)
     inferred_file = _infer_file_query(query)
     render_anchor = _is_render_code_anchor(query)
+    debug_request = _debug_request_for(query=query, context=context, task_type=task_type)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
+
+    if debug_request is not None:
+        routing_reasons.append("explicit_debug_route")
+        return RoutingDecision(
+            route_mode="task",
+            task_type=task_type,
+            component_hint=explicit_component if isinstance(explicit_component, str) else None,
+            source_preferences=["debug"],
+            tools=[debug_request],
+            routing_notes=routing_notes + [debug_request.reason],
+            manual_tools=[],
+            routing_reasons=routing_reasons + [debug_request.reason],
+            debug_intent=str(debug_request.payload.get("intent")) if debug_request.payload else None,
+            debug_execution_mode=_debug_execution_mode(debug_request.payload),
+        )
 
     docs_needed = any(
         keyword in normalized
@@ -153,9 +172,24 @@ def _auto_route(query: str, context: dict[str, Any], task_type: str, normalized:
     explicit_symbol = context.get("symbol")
     inferred_symbol = _infer_symbol_query(query)
     inferred_file = _infer_file_query(query)
+    debug_request = _debug_request_for(query=query, context=context, task_type=task_type)
     signals = _analyze_auto_routing(query=query, normalized=normalized, context=context, task_type=task_type)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
+
+    if debug_request is not None:
+        return RoutingDecision(
+            route_mode="auto",
+            task_type=task_type,
+            component_hint=explicit_component if isinstance(explicit_component, str) else None,
+            source_preferences=["debug"],
+            tools=[debug_request],
+            routing_notes=routing_notes + ["explicit_debug_route_in_auto"] + [debug_request.reason],
+            manual_tools=[],
+            routing_reasons=["explicit_debug_route_in_auto", debug_request.reason],
+            debug_intent=str(debug_request.payload.get("intent")) if debug_request.payload else None,
+            debug_execution_mode=_debug_execution_mode(debug_request.payload),
+        )
 
     if signals.docs:
         tools.append(_docs_request(query=query, task_type=task_type, reason="auto selected docs"))
@@ -195,6 +229,7 @@ def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_to
     explicit_symbol = context.get("symbol")
     inferred_symbol = _infer_symbol_query(query)
     inferred_file = _infer_file_query(query)
+    debug_request = _debug_request_for(query=query, context=context, task_type=task_type)
     tools: list[ToolRequest] = []
     source_preferences: list[str] = []
     for tool_name in manual_tools:
@@ -216,6 +251,11 @@ def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_to
         elif tool_name == "agentic_sitemap":
             tools.append(_site_request_for(query=query, context=context, task_type=task_type, reason="manual tool selection"))
             source_preferences.append("site")
+        elif tool_name == "agentic_debug":
+            if debug_request is None:
+                raise ConfigurationError("Manual debug tool selection requires an explicit supported debug query or context.")
+            tools.append(debug_request)
+            source_preferences.append("debug")
         else:
             raise ConfigurationError(f"Unsupported manual tool selection '{tool_name}'.")
 
@@ -228,6 +268,8 @@ def _manual_route(query: str, context: dict[str, Any], task_type: str, manual_to
         routing_notes=[f"task_type={task_type}", "route_mode=manual", f"manual_tools={','.join(manual_tools)}"] + [request.reason for request in tools],
         manual_tools=list(manual_tools),
         routing_reasons=[f"manual_tools={','.join(manual_tools)}"] + [request.reason for request in tools],
+        debug_intent=str(debug_request.payload.get("intent")) if debug_request and "agentic_debug" in manual_tools and debug_request.payload else None,
+        debug_execution_mode=_debug_execution_mode(debug_request.payload) if debug_request and "agentic_debug" in manual_tools else None,
     )
 
 
@@ -451,6 +493,18 @@ def _code_request(
 def _classify_task_type(normalized_query: str) -> str:
     """Map a query into a coarse task family used by routing and diagnostics."""
 
+    if _is_interpret_session_query(normalized_query):
+        return "debug_interpret_session"
+    if _is_get_session_query(normalized_query):
+        return "debug_get_session"
+    if _is_plan_phpunit_query(normalized_query):
+        return "debug_plan_phpunit"
+    if _is_plan_cli_query(normalized_query):
+        return "debug_plan_cli"
+    if _is_execute_phpunit_query(normalized_query):
+        return "debug_execute_phpunit"
+    if _is_execute_cli_query(normalized_query):
+        return "debug_execute_cli"
     if "settings" in normalized_query and "plugin" in normalized_query:
         return "admin_settings"
     if "scheduled task" in normalized_query or ("task" in normalized_query and "register" in normalized_query):
@@ -560,3 +614,115 @@ def _site_request_for(query: str, context: dict[str, Any], task_type: str, reaso
         lookup_mode="page",
         query=query,
     )
+
+
+def _debug_request_for(query: str, context: dict[str, Any], task_type: str) -> ToolRequest | None:
+    """Return a debugger tool request only for explicit bounded debug families."""
+
+    normalized = normalize_query(query)
+    session_id = str(context.get("debug_session_id") or _infer_debug_session_id(query) or "")
+    test_ref = str(context.get("test_ref") or _infer_phpunit_selector(query) or "")
+    script_path = str(context.get("script_path") or _infer_cli_script(query) or "")
+
+    if task_type == "debug_interpret_session" and session_id:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit debug session interpretation request",
+            mode="runtime-query",
+            payload={"intent": "interpret_session", "session_id": session_id},
+        )
+    if task_type == "debug_get_session" and session_id:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit debug session retrieval request",
+            mode="runtime-query",
+            payload={"intent": "get_session", "session_id": session_id},
+        )
+    if task_type == "debug_plan_phpunit" and test_ref:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit bounded phpunit debug planning request",
+            mode="runtime-query",
+            payload={"intent": "plan_phpunit", "test_ref": test_ref},
+        )
+    if task_type == "debug_plan_cli" and script_path:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit bounded cli debug planning request",
+            mode="runtime-query",
+            payload={"intent": "plan_cli", "script_path": script_path},
+        )
+    if task_type == "debug_execute_phpunit" and test_ref:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit bounded phpunit debug execution request",
+            mode="runtime-query",
+            payload={"intent": "execute_phpunit", "test_ref": test_ref},
+        )
+    if task_type == "debug_execute_cli" and script_path:
+        return ToolRequest(
+            tool_name="agentic_debug",
+            reason="explicit bounded cli debug execution request",
+            mode="runtime-query",
+            payload={"intent": "execute_cli", "script_path": script_path},
+        )
+    return None
+
+
+def _debug_execution_mode(payload: dict[str, Any] | None) -> str | None:
+    if not payload:
+        return None
+    intent = str(payload.get("intent", ""))
+    if intent.startswith("execute_"):
+        return "execute"
+    if intent in {"interpret_session", "get_session"} or intent.startswith("plan_"):
+        return "safe"
+    return None
+
+
+def _is_interpret_session_query(normalized_query: str) -> bool:
+    return "interpret" in normalized_query and "session" in normalized_query
+
+
+def _is_get_session_query(normalized_query: str) -> bool:
+    return any(phrase in normalized_query for phrase in ("get session", "retrieve session")) and "debug" in normalized_query
+
+
+def _is_plan_phpunit_query(normalized_query: str) -> bool:
+    return "plan" in normalized_query and "phpunit" in normalized_query
+
+
+def _is_plan_cli_query(normalized_query: str) -> bool:
+    return "plan" in normalized_query and "cli" in normalized_query and ".php" in normalized_query
+
+
+def _is_execute_phpunit_query(normalized_query: str) -> bool:
+    return "execute" in normalized_query and "phpunit" in normalized_query
+
+
+def _is_execute_cli_query(normalized_query: str) -> bool:
+    return "execute" in normalized_query and "cli" in normalized_query and ".php" in normalized_query
+
+
+def _infer_phpunit_selector(query: str) -> str | None:
+    for token in query.split():
+        cleaned = token.strip("`'\",")
+        if "::" in cleaned and "\\" in cleaned:
+            return cleaned
+    return None
+
+
+def _infer_cli_script(query: str) -> str | None:
+    for token in query.split():
+        cleaned = token.strip("`'\",")
+        if cleaned.endswith(".php") and "/cli/" in cleaned:
+            return cleaned
+    return None
+
+
+def _infer_debug_session_id(query: str) -> str | None:
+    for token in query.split():
+        cleaned = token.strip("`'\",")
+        if cleaned.startswith("mds_"):
+            return cleaned
+    return None

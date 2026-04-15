@@ -1,0 +1,45 @@
+{
+  "version": "v1",
+  "cases": [
+    {
+      "id": "interpret_debug_session",
+      "query": "interpret this debug session mds_example_session_id",
+      "expected_tools": ["agentic_debug"],
+      "expected_intent": "interpret_session",
+      "expected_execution_mode": "safe",
+      "notes": ["safe interpretation path"]
+    },
+    {
+      "id": "plan_phpunit_debug",
+      "query": "plan debug for this PHPUnit selector mod_assign\\tests\\grading_test::test_grade_submission",
+      "expected_tools": ["agentic_debug"],
+      "expected_intent": "plan_phpunit",
+      "expected_execution_mode": "safe",
+      "notes": ["bounded phpunit planning path"]
+    },
+    {
+      "id": "plan_cli_debug",
+      "query": "plan debug for this CLI script admin/cli/some_script.php",
+      "expected_tools": ["agentic_debug"],
+      "expected_intent": "plan_cli",
+      "expected_execution_mode": "safe",
+      "notes": ["bounded cli planning path"]
+    },
+    {
+      "id": "execute_phpunit_debug",
+      "query": "execute phpunit debug for mod_assign\\tests\\grading_test::test_grade_submission",
+      "expected_tools": ["agentic_debug"],
+      "expected_intent": "execute_phpunit",
+      "expected_execution_mode": "execute",
+      "notes": ["explicit opt-in phpunit execution path"]
+    },
+    {
+      "id": "execute_cli_debug",
+      "query": "execute cli debug for admin/cli/some_script.php",
+      "expected_tools": ["agentic_debug"],
+      "expected_intent": "execute_cli",
+      "expected_execution_mode": "execute",
+      "notes": ["explicit opt-in cli execution path"]
+    }
+  ]
+}

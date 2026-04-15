@@ -132,6 +132,7 @@ def build_orchestrator_envelope(
     docs_results: list[dict[str, Any]],
     code_results: list[dict[str, Any]],
     site_results: list[dict[str, Any]],
+    debug_results: list[dict[str, Any]],
     key_signals: list[dict[str, Any]],
     tools_called: list[dict[str, Any]],
     suggested_next_steps: list[dict[str, Any]],
@@ -144,6 +145,7 @@ def build_orchestrator_envelope(
         "docs_results": docs_results,
         "code_results": code_results,
         "site_results": site_results,
+        "debug_results": debug_results,
         "key_signals": key_signals,
         "suggested_next_steps": suggested_next_steps,
         "summary": summary,
@@ -164,7 +166,7 @@ def build_orchestrator_envelope(
                 "id": stable_id("orchestrated_context", query),
                 "type": "orchestrated_context",
                 "rank": 1,
-                "confidence": _merge_confidence(docs_results, code_results, site_results),
+                "confidence": _merge_confidence(docs_results, code_results, site_results, debug_results),
                 "source": orchestrator_source(),
                 "content": content,
                 "diagnostics": diagnostics,
@@ -177,8 +179,9 @@ def _merge_confidence(
     docs_results: list[dict[str, Any]],
     code_results: list[dict[str, Any]],
     site_results: list[dict[str, Any]],
+    debug_results: list[dict[str, Any]],
 ) -> str:
-    total = sum(bool(group) for group in (docs_results, code_results, site_results))
+    total = sum(bool(group) for group in (docs_results, code_results, site_results, debug_results))
     if total >= 2:
         return "high"
     if total == 1:

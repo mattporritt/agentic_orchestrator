@@ -1,4 +1,4 @@
-"""Thin subprocess adapters for the three existing runtime-facing tools."""
+"""Thin subprocess adapters for the runtime-facing sibling tools."""
 
 from __future__ import annotations
 
@@ -64,6 +64,34 @@ class RuntimeToolAdapter:
         except json.JSONDecodeError as exc:
             raise ToolExecutionError(f"{self.tool_name} returned invalid JSON: {exc}") from exc
         return validate_runtime_envelope(loaded, expected_tool=self.tool_name)
+
+
+def validate_debug_runtime_envelope(payload: dict) -> dict:
+    """Validate the narrower debugger runtime envelope.
+
+    `agentic_debug` exposes a structured runtime contract, but its top-level
+    query/intent/meta fields are debugger-specific and do not match the shared
+    string-based sibling envelope used by the docs/index/site tools.
+    """
+
+    if not isinstance(payload, dict):
+        raise ToolExecutionError("agentic_debug returned a non-object JSON payload.")
+    for field in ("tool", "version", "query", "normalized_query", "intent", "results", "diagnostics", "meta"):
+        if field not in payload:
+            raise ToolExecutionError(f"agentic_debug runtime envelope missing required field '{field}'.")
+    if payload["tool"] != "moodle_debug":
+        raise ToolExecutionError(f"expected debugger tool 'moodle_debug' but received '{payload['tool']}'.")
+    if payload["version"] != "runtime-v1":
+        raise ToolExecutionError(f"unsupported agentic_debug runtime version '{payload['version']}'.")
+    if not isinstance(payload["results"], list):
+        raise ToolExecutionError("agentic_debug runtime envelope field 'results' must be a list.")
+    for index, item in enumerate(payload["results"], start=1):
+        if not isinstance(item, dict):
+            raise ToolExecutionError(f"agentic_debug result {index} must be an object.")
+        for field in ("id", "type", "rank", "confidence", "source", "content", "diagnostics"):
+            if field not in item:
+                raise ToolExecutionError(f"agentic_debug result {index} missing required field '{field}'.")
+    return payload
 
 
 class DevdocsAdapter(RuntimeToolAdapter):
@@ -165,11 +193,51 @@ class SitemapAdapter(RuntimeToolAdapter):
         return self._run_json(args)
 
 
+class DebugAdapter(RuntimeToolAdapter):
+    """Adapter for the `agentic_debug` runtime-query and health CLIs."""
+
+    tool_name = "moodle_debug"
+
+    def runtime_query(self, *, request: ToolRequest) -> dict:
+        if not request.payload:
+            raise ConfigurationError("Debug runtime-query requests require a JSON payload.")
+        return self._run_debug_json(["runtime-query", "--json", json.dumps(request.payload, separators=(",", ":"))])
+
+    def health(self) -> dict:
+        return self._run_debug_json(["health", "--json", "{}"])
+
+    def _run_debug_json(self, extra_args: list[str]) -> dict:
+        self.tool_config.validate()
+        command = [self.tool_config.resolved_program(), *(self.tool_config.command[1:]), *(self.tool_config.extra_args or []), *extra_args]
+        try:
+            completed = self.runner(
+                args=command,
+                text=True,
+                capture_output=True,
+                check=False,
+                cwd=self.tool_config.workdir,
+                env=self.tool_config.merged_env(),
+            )
+        except FileNotFoundError as exc:
+            raise ToolExecutionError(f"{self.tool_name} executable not found: {self.tool_config.command[0]}") from exc
+
+        if completed.returncode != 0:
+            raise ToolExecutionError(
+                f"{self.tool_name} command failed with exit code {completed.returncode}: {completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        try:
+            loaded = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise ToolExecutionError(f"{self.tool_name} returned invalid JSON: {exc}") from exc
+        return validate_debug_runtime_envelope(loaded)
+
+
 @dataclass
 class AdapterSet:
     devdocs: DevdocsAdapter
     indexer: IndexerAdapter
     sitemap: SitemapAdapter
+    debug: DebugAdapter
 
     @classmethod
     def from_config(cls, config: OrchestratorConfig, runner: Runner | None = None) -> "AdapterSet":
@@ -177,6 +245,7 @@ class AdapterSet:
             devdocs=DevdocsAdapter(tool_config=config.devdocs, runner=runner),
             indexer=IndexerAdapter(tool_config=config.indexer, runner=runner),
             sitemap=SitemapAdapter(tool_config=config.sitemap, runner=runner),
+            debug=DebugAdapter(tool_config=config.debug, runner=runner),
         )
 
 
@@ -190,6 +259,8 @@ def tool_call_record(config: OrchestratorConfig, request: ToolRequest) -> ToolCa
         cmd = [*tool_config.command, *(tool_config.extra_args or []), request.mode]
     elif request.tool_name == "agentic_sitemap":
         cmd = [*tool_config.command, *(tool_config.extra_args or []), "runtime-query"]
+    elif request.tool_name == "agentic_debug":
+        cmd = [*tool_config.command, *(tool_config.extra_args or []), request.mode]
     else:
         cmd = tool_config.command_line()
     return ToolCallRecord(tool=request.tool_name, mode=request.mode, reason=request.reason, command=cmd, workdir=tool_config.workdir)

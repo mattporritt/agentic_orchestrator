@@ -22,7 +22,7 @@ from agentic_orchestrator.pilot import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="agentic-orchestrator",
-        description="Thin orchestration prototype over the three runtime-facing Moodle helper tools.",
+        description="Thin orchestration prototype over the runtime-facing Moodle helper tools.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -165,6 +165,9 @@ def _add_common_config_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sitemap-cmd", help="Override the sitemap command string.")
     parser.add_argument("--sitemap-workdir", help="Override the sitemap working directory.")
     parser.add_argument("--sitemap-extra-args", help="Override sitemap extra args as a shell-like string.")
+    parser.add_argument("--debug-cmd", help="Override the agentic_debug command string.")
+    parser.add_argument("--debug-workdir", help="Override the agentic_debug working directory.")
+    parser.add_argument("--debug-extra-args", help="Override agentic_debug extra args as a shell-like string.")
     parser.add_argument("--devdocs-db-path", help="Path to the devdocs SQLite DB.")
     parser.add_argument("--indexer-db-path", help="Path to the indexer SQLite DB.")
     parser.add_argument("--sitemap-run-dir", help="Path to the saved sitemap run directory.")

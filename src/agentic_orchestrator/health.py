@@ -122,6 +122,28 @@ def _tool_checks(config: OrchestratorConfig) -> list[HealthCheckResult]:
                 details={"program": tool.resolved_program(), "workdir": tool.workdir},
             )
         )
+    if config.debug.command:
+        tool = config.debug
+        try:
+            tool.validate()
+        except ConfigurationError as exc:
+            checks.append(
+                HealthCheckResult(
+                    name="tool.agentic_debug",
+                    status="FAIL",
+                    summary=str(exc),
+                    details={"program": tool.command[0] if tool.command else None, "workdir": tool.workdir},
+                )
+            )
+        else:
+            checks.append(
+                HealthCheckResult(
+                    name="tool.agentic_debug",
+                    status="OK",
+                    summary="tool command and workdir resolved successfully",
+                    details={"program": tool.resolved_program(), "workdir": tool.workdir},
+                )
+            )
     return checks
 
 
@@ -204,6 +226,13 @@ def _contract_checks(config: OrchestratorConfig, *, runner: Runner | None = None
             ),
         ),
     ]
+    if config.debug.command:
+        specs.append(
+            (
+                "contract.agentic_debug",
+                lambda: adapters.debug.health(),
+            )
+        )
     for name, call in specs:
         try:
             payload = call()

@@ -18,6 +18,7 @@ TOOL_KEY_MAP = {
     "devdocs": "agentic_devdocs",
     "indexer": "agentic_indexer",
     "sitemap": "agentic_sitemap",
+    "debug": "agentic_debug",
 }
 
 
@@ -96,6 +97,7 @@ class OrchestratorConfig:
     devdocs: ToolCommandConfig
     indexer: ToolCommandConfig
     sitemap: ToolCommandConfig
+    debug: ToolCommandConfig
     devdocs_db_path: str | None
     indexer_db_path: str | None
     sitemap_run_dir: str | None
@@ -119,6 +121,7 @@ class OrchestratorConfig:
             devdocs=_build_tool_config("devdocs", args=args, file_tools=tools, default_command="agentic-docs"),
             indexer=_build_tool_config("indexer", args=args, file_tools=tools, default_command="moodle-indexer"),
             sitemap=_build_tool_config("sitemap", args=args, file_tools=tools, default_command="moodle-sitemap"),
+            debug=_build_tool_config("debug", args=args, file_tools=tools, default_command=None),
             devdocs_db_path=_first_value(
                 getattr(args, "devdocs_db_path", None),
                 os.getenv("AGENTIC_ORCHESTRATOR_DEVDOCS_DB"),
@@ -146,6 +149,8 @@ class OrchestratorConfig:
             return self.indexer
         if tool_name == "agentic_sitemap":
             return self.sitemap
+        if tool_name == "agentic_debug":
+            return self.debug
         raise ConfigurationError(f"Unknown tool config requested: {tool_name}")
 
     def validate_tool(self, tool_name: str) -> None:
@@ -167,7 +172,7 @@ class OrchestratorConfig:
         """Return a review-friendly summary of configured tool commands."""
 
         report: list[dict[str, Any]] = []
-        for tool_name in ("agentic_devdocs", "agentic_indexer", "agentic_sitemap"):
+        for tool_name in ("agentic_devdocs", "agentic_indexer", "agentic_sitemap", "agentic_debug"):
             tool = self.tool_config(tool_name)
             report.append(
                 {
@@ -194,7 +199,7 @@ def _build_tool_config(
     *,
     args: Any,
     file_tools: dict[str, Any],
-    default_command: str,
+    default_command: str | None,
 ) -> ToolCommandConfig:
     """Build one tool config from CLI args, environment, and optional TOML values."""
 
@@ -275,6 +280,8 @@ def parse_manual_tools(raw_values: list[str] | None) -> list[str]:
         "site": "agentic_sitemap",
         "sitemap": "agentic_sitemap",
         "agentic_sitemap": "agentic_sitemap",
+        "debug": "agentic_debug",
+        "agentic_debug": "agentic_debug",
     }
     parsed: list[str] = []
     for raw in raw_values:
