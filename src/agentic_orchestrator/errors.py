@@ -15,3 +15,7 @@ class ToolExecutionError(OrchestratorError):
 
 class ContractValidationError(OrchestratorError):
     """Raised when a tool returns malformed runtime contract JSON."""
+
+
+class InstallationError(OrchestratorError):
+    """Raised when sibling tool bootstrap/install setup fails."""

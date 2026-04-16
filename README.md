@@ -2,10 +2,10 @@
 
 `agentic_orchestrator` is a thin context-assembly layer over four existing runtime-facing tools:
 
-- `agentic_devdocs`
-- `agentic_indexer`
-- `agentic_sitemap`
-- `agentic_debug`
+- [`agentic_devdocs`](https://github.com/mattporritt/agentic_devdocs)
+- [`agentic_indexer`](https://github.com/mattporritt/agentic_indexer)
+- [`agentic_sitemap`](https://github.com/mattporritt/agentic_sitemap)
+- [`agentic_debug`](https://github.com/mattporritt/agentic_debug)
 
 It stays intentionally narrow. It calls those tools in their existing CLI JSON-contract modes, validates the shared outer envelope shape, and merges the resulting docs/code/site context into a single runtime-facing response for a coding agent to consume.
 
@@ -35,6 +35,13 @@ Do not use it when you need:
 - `agentic_debug`: handles bounded debugger runtime plans, session interpretation/retrieval, explicit execution, and debugger health checks
 - `agentic_orchestrator`: decides which of those tools to call, validates their runtime envelopes, and assembles the grouped result into one response
 
+Sibling repositories:
+
+- [`agentic_devdocs`](https://github.com/mattporritt/agentic_devdocs)
+- [`agentic_indexer`](https://github.com/mattporritt/agentic_indexer)
+- [`agentic_sitemap`](https://github.com/mattporritt/agentic_sitemap)
+- [`agentic_debug`](https://github.com/mattporritt/agentic_debug)
+
 ## Quickstart
 
 ### Human Quickstart
@@ -59,7 +66,34 @@ python3 -m venv .venv
 cp config.example.toml config.local.toml
 ```
 
-4. Run a first query:
+4. Or bootstrap the sibling repos and write a local config scaffold in one step:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli install-siblings \
+  --install-root ~/projects/agentic-moodle-tools \
+  --write-config ./config.local.toml
+```
+
+This command clones:
+
+- [`agentic_devdocs`](https://github.com/mattporritt/agentic_devdocs)
+- [`agentic_indexer`](https://github.com/mattporritt/agentic_indexer)
+- [`agentic_sitemap`](https://github.com/mattporritt/agentic_sitemap)
+- [`agentic_debug`](https://github.com/mattporritt/agentic_debug)
+
+and bootstraps them with their repo-native install step. The generated config writes the tool command paths for you, but you still need to fill in the resource paths after you build the docs DB, index DB, and sitemap run.
+
+After `install-siblings`, complete the remaining local setup in this order:
+
+1. build or ingest a local docs DB in [`agentic_devdocs`](https://github.com/mattporritt/agentic_devdocs)
+2. build a local Moodle code index DB in [`agentic_indexer`](https://github.com/mattporritt/agentic_indexer)
+3. create and save a local discovery/crawl run in [`agentic_sitemap`](https://github.com/mattporritt/agentic_sitemap)
+4. update `config.local.toml` so `devdocs_db_path`, `indexer_db_path`, and `sitemap_run_dir` point at those generated artifacts
+5. run `agentic-orchestrator health --config ./config.local.toml` before your first real query
+
+The installer helps with repo checkout and dependency bootstrap only. It does not generate those runtime resources for you.
+
+5. Run a first query:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
@@ -68,20 +102,20 @@ PYTHONPATH=src python3 -m agentic_orchestrator.cli query \
   --json
 ```
 
-5. Run the test suite before changing behavior:
+6. Run the test suite before changing behavior:
 
 ```bash
 python3 -m pytest
 ```
 
-6. Run a runtime health check before real orchestrated development work:
+7. Run a runtime health check before real orchestrated development work:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.cli health \
   --config ./config.local.toml
 ```
 
-7. Generate a live review bundle when you need a verification artifact:
+8. Generate a live review bundle when you need a verification artifact:
 
 ```bash
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml
@@ -223,6 +257,31 @@ Typical local setup steps:
 4. for `agentic_debug`, point `command` directly at `bin/moodle-debug` in the local repo checkout; the default install already provides that executable, so the example config does not wrap it with `php`
 5. set the `resources` paths to the real docs DB, index DB, and sitemap run
 6. run a JSON query and then the test suite
+
+If you want a thin setup helper instead of doing this by hand, use:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli install-siblings \
+  --install-root ~/projects/agentic-moodle-tools \
+  --write-config ./config.local.toml
+```
+
+Notes about the helper:
+
+- it clones the sibling repositories from GitHub into the install root you choose
+- it creates `.venv` installs for `agentic_devdocs`, `agentic_indexer`, and `agentic_sitemap`
+- it runs `composer install` for `agentic_debug`
+- by default it also runs `playwright install chromium` for `agentic_sitemap`
+- use `--skip-sitemap-browser-install` if you want to defer the browser install
+- it does not build the docs DB, index DB, or sitemap run for you; those resources still need to be generated separately
+
+What you still need to do after the helper finishes:
+
+- in [`agentic_devdocs`](https://github.com/mattporritt/agentic_devdocs), generate the local docs DB you want the orchestrator to query
+- in [`agentic_indexer`](https://github.com/mattporritt/agentic_indexer), build the local Moodle index DB
+- in [`agentic_sitemap`](https://github.com/mattporritt/agentic_sitemap), create a crawl/discovery run and note its run directory
+- copy those three resulting paths into the `[resources]` section of `config.local.toml`
+- run the orchestrator health check before relying on live results
 
 ## Runtime Health / Drift Command
 

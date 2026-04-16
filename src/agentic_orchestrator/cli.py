@@ -9,6 +9,7 @@ import sys
 from agentic_orchestrator.config import OrchestratorConfig, parse_context_json, parse_manual_tools
 from agentic_orchestrator.errors import OrchestratorError
 from agentic_orchestrator.health import collect_health_report, render_health_text
+from agentic_orchestrator.installer import install_sibling_tools, render_install_report_text
 from agentic_orchestrator.orchestrator import OrchestratorService
 from agentic_orchestrator.pilot import (
     OUTCOME_VALUES,
@@ -38,6 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
     health_parser.add_argument("--json", action="store_true", help="Emit structured JSON health output.")
     health_parser.add_argument("--deep", action="store_true", help="Also run deeper routing/task baseline sanity checks.")
     _add_common_config_args(health_parser)
+
+    install_parser = subparsers.add_parser(
+        "install-siblings",
+        help="Clone and bootstrap the sibling tool repositories into one local install root.",
+    )
+    install_parser.add_argument("--install-root", required=True, help="Directory where the sibling repos should be cloned.")
+    install_parser.add_argument("--write-config", help="Optional path for a generated local config scaffold.")
+    install_parser.add_argument("--skip-sitemap-browser-install", action="store_true", help="Skip `playwright install chromium` for agentic_sitemap.")
+    install_parser.add_argument("--dry-run", action="store_true", help="Print the install plan without cloning or installing anything.")
+    install_parser.add_argument("--json", action="store_true", help="Emit the install report as JSON.")
 
     pilot_run_parser = subparsers.add_parser("pilot-run", help="Run one supervised pilot trial and save its artifact.")
     pilot_run_parser.add_argument("query_text", help="Task query to run through the orchestrator.")
@@ -96,6 +107,18 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(report, indent=2, sort_keys=True))
                 return 0
             print(render_health_text(report), end="")
+            return 0
+        if args.command == "install-siblings":
+            report = install_sibling_tools(
+                install_root=args.install_root,
+                write_config=args.write_config,
+                install_sitemap_browser=not args.skip_sitemap_browser_install,
+                dry_run=args.dry_run,
+            )
+            if args.json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+                return 0
+            print(render_install_report_text(report), end="")
             return 0
         if args.command == "pilot-run":
             context = parse_context_json(args.context_json)

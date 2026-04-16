@@ -132,6 +132,44 @@ def test_cli_health_plain_mode(monkeypatch, capsys) -> None:
     assert "[WARNING] resource.indexer_db: stale" in output
 
 
+def test_cli_install_siblings_json_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "install_sibling_tools",
+        lambda **kwargs: {
+            "install_root": "/tmp/tools",
+            "dry_run": True,
+            "install_sitemap_browser": True,
+            "tools": [{"tool": "agentic_devdocs", "clone_status": "would_clone", "repo_url": "https://github.com/mattporritt/agentic_devdocs", "repo_dir": "/tmp/tools/agentic_devdocs", "command_path": "/tmp/tools/agentic_devdocs/.venv/bin/agentic-docs", "install_commands": []}],
+            "written_config": "/tmp/config.local.toml",
+        },
+    )
+    rc = cli.main(["install-siblings", "--install-root", "/tmp/tools", "--dry-run", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["dry_run"] is True
+    assert payload["tools"][0]["tool"] == "agentic_devdocs"
+
+
+def test_cli_install_siblings_plain_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "install_sibling_tools",
+        lambda **kwargs: {
+            "install_root": "/tmp/tools",
+            "dry_run": False,
+            "install_sitemap_browser": False,
+            "tools": [{"tool": "agentic_debug", "clone_status": "existing", "repo_url": "https://github.com/mattporritt/agentic_debug", "repo_dir": "/tmp/tools/agentic_debug", "command_path": "/tmp/tools/agentic_debug/bin/moodle-debug", "install_commands": []}],
+            "written_config": None,
+        },
+    )
+    rc = cli.main(["install-siblings", "--install-root", "/tmp/tools", "--skip-sitemap-browser-install"])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Sibling Tool Install" in output
+    assert "agentic_debug: existing" in output
+
+
 def test_cli_pilot_run_json_mode(monkeypatch, capsys, tmp_path: Path) -> None:
     class FakeService:
         def query(self, *, query: str, context: dict | None = None, route_mode: str = "task", manual_tools: list[str] | None = None) -> dict:
