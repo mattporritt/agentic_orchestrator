@@ -210,6 +210,8 @@ def test_orchestrator_merges_grouped_results_and_preserves_tool_boundaries() -> 
     assert "routing_reasons" in result["diagnostics"]
     assert "matched_route_signals" in result["diagnostics"]
     assert "assembly_notes" in result["diagnostics"]
+    assert result["content"]["result_thin"] is False
+    assert result["content"]["refine_query_suggested"] is False
 
 
 def test_orchestrator_manual_mode_uses_requested_tools() -> None:
@@ -258,6 +260,51 @@ def test_orchestrator_shapes_vague_render_query_into_docs_anchor_for_indexer() -
     assert shaped[0]["shaped_query"] == "renderer output mustache template renderable"
     assert result["diagnostics"]["code_signal_source"] == "source_path"
     assert any(step["source_tool"] == "agentic_indexer" for step in result["content"]["suggested_next_steps"])
+
+
+def test_orchestrator_flags_thin_code_result_with_refine_hints() -> None:
+    def thin_runner(*, args, text, capture_output, check, cwd=None, env=None):
+        del text, capture_output, check, cwd, env
+        if args[1] == "mock-indexer":
+            payload = {
+                "tool": "agentic_indexer",
+                "version": "v1",
+                "query": "how does this render",
+                "normalized_query": "how does this render",
+                "intent": {},
+                "results": [
+                    {
+                        "id": "code-thin",
+                        "type": "context_bundle",
+                        "rank": 1,
+                        "confidence": "medium",
+                        "source": {
+                            "name": "index",
+                            "type": "code_index",
+                            "url": None,
+                            "canonical_url": None,
+                            "path": None,
+                            "document_title": None,
+                            "section_title": None,
+                            "heading_path": [],
+                        },
+                        "content": {"summary": "Thin code result"},
+                        "diagnostics": {},
+                    }
+                ],
+            }
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
+        return _runner(args=args, text=True, capture_output=True, check=False)
+
+    service = OrchestratorService.from_config(_config(), runner=thin_runner)
+    payload = service.query(query="How should this render in Moodle?", route_mode="manual", manual_tools=["agentic_indexer"])
+    content = payload["results"][0]["content"]
+    diagnostics = payload["results"][0]["diagnostics"]
+    assert content["result_thin"] is True
+    assert "code_anchor" in content["missing_key_signals"]
+    assert content["refine_query_suggested"] is True
+    assert "specify a symbol" in content["refine_query_hints"]
+    assert diagnostics["thin_result"] is True
 
 
 def test_orchestrator_routes_render_symbol_query_directly_to_indexer_context_bundle() -> None:

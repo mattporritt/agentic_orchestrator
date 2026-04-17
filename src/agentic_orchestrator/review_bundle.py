@@ -17,8 +17,8 @@ from pathlib import Path
 
 from agentic_orchestrator.config import OrchestratorConfig, resolve_repo_root
 from agentic_orchestrator.debug_eval import evaluate_debug_routes, load_debug_eval_cases, render_debug_eval_text
-from agentic_orchestrator.errors import ConfigurationError
-from agentic_orchestrator.health import collect_health_report, render_health_text
+from agentic_orchestrator.errors import ConfigurationError, ToolExecutionError
+from agentic_orchestrator.health import collect_health_report, collect_verify_report, render_health_text, render_verify_text
 from agentic_orchestrator.orchestrator import OrchestratorService
 from agentic_orchestrator.pilot import collect_pilot_report, create_pilot_trial, render_pilot_report_text
 from agentic_orchestrator.review_reporting import (
@@ -28,6 +28,7 @@ from agentic_orchestrator.review_reporting import (
     serializable_health_report,
     serializable_routing_eval,
     serializable_task_eval,
+    serializable_verify_report,
 )
 from agentic_orchestrator.routing_eval import (
     compare_modes_for_case,
@@ -296,12 +297,22 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     task_cases = load_task_eval_cases()
     task_evaluation = evaluate_task_outputs(service, cases=task_cases)
     health_report = collect_health_report(config, runner=runtime.runner, deep=False)
+    verify_report = collect_verify_report(config, runner=runtime.runner)
     debug_evaluation = None
     debug_cases = load_debug_eval_cases()
     if config.debug.command:
-        debug_evaluation = evaluate_debug_routes(service, cases=debug_cases)
+        try:
+            debug_evaluation = evaluate_debug_routes(service, cases=debug_cases)
+        except ToolExecutionError as exc:
+            debug_evaluation = {
+                "summary": {"CORRECT": 0, "WRONG": 0},
+                "cases": [],
+                "notes": [f"debug eval skipped during bundle generation: {exc}"],
+            }
     warning_health_report = _simulated_health_report(health_report, status="WARNING")
     failure_health_report = _simulated_health_report(health_report, status="FAIL")
+    degraded_verify_report = _simulated_verify_report(verify_report, status="DEGRADED")
+    failure_verify_report = _simulated_verify_report(verify_report, status="NOT_READY")
 
     for case_result in routing_evaluation["cases"]:
         slug = case_result["case_id"]
@@ -325,6 +336,11 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     for slug, query in render_examples:
         payload = service.query(query=query, route_mode="task")
         (examples_dir / f"{slug}.task.json").write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    (examples_dir / "thin_result.synthetic.json").write_text(
+        json.dumps(_synthetic_thin_result_payload(), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
     if debug_evaluation is not None:
         for case_result in debug_evaluation["cases"]:
@@ -356,6 +372,12 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
     (bundle_dir / "health_warning.txt").write_text(render_health_text(warning_health_report), encoding="utf-8")
     (bundle_dir / "health_failure.json").write_text(json.dumps(serializable_health_report(failure_health_report), indent=2, sort_keys=True), encoding="utf-8")
     (bundle_dir / "health_failure.txt").write_text(render_health_text(failure_health_report), encoding="utf-8")
+    (bundle_dir / "verify.json").write_text(json.dumps(serializable_verify_report(verify_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "verify.txt").write_text(render_verify_text(verify_report), encoding="utf-8")
+    (bundle_dir / "verify_degraded.json").write_text(json.dumps(serializable_verify_report(degraded_verify_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "verify_degraded.txt").write_text(render_verify_text(degraded_verify_report), encoding="utf-8")
+    (bundle_dir / "verify_failure.json").write_text(json.dumps(serializable_verify_report(failure_verify_report), indent=2, sort_keys=True), encoding="utf-8")
+    (bundle_dir / "verify_failure.txt").write_text(render_verify_text(failure_verify_report), encoding="utf-8")
     (bundle_dir / "README_snapshot.md").write_text((repo_root / "README.md").read_text(encoding="utf-8"), encoding="utf-8")
     for doc_name in ("AGENTS.md", "CONTRIBUTING.md"):
         doc_path = repo_root / doc_name
@@ -420,6 +442,8 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
         ),
         warning_example_path=bundle_dir / "health_warning.txt",
         failure_example_path=bundle_dir / "health_failure.txt",
+        verify_example_path=bundle_dir / "verify.txt",
+        thin_result_example_path=examples_dir / "thin_result.synthetic.json",
         pilot_trial_dir=trial_dir,
         pilot_report_path=bundle_dir / "pilot_report.txt",
     )
@@ -430,6 +454,8 @@ def generate_review_bundle(*, config_path: str | None = None, allow_mock_fallbac
             + "- Supported explicit routes: interpret session, get session, plan phpunit, plan cli, execute phpunit, execute cli\n"
             + "- `debug_results` are grouped separately so debugger provenance stays visible\n"
         )
+        for note in debug_evaluation.get("notes", []):
+            summary_text += f"- {note}\n"
     (bundle_dir / "summary.md").write_text(summary_text, encoding="utf-8")
 
     _write_command_output(bundle_dir / "pytest.txt", ["python3", "-m", "pytest"], cwd=repo_root, extra_env={"PYTHONPATH": "src"})
@@ -447,16 +473,97 @@ def _simulated_health_report(report: dict[str, object], *, status: str) -> dict[
         for check in cloned["checks"]:
             if check["name"] == "resource.indexer_db":
                 check["status"] = "WARNING"
+                check["impact"] = "non_blocking"
                 check["summary"] = "resource exists but appears stale"
                 break
+    else:
+        cloned["overall_status"] = "FAIL"
+        for check in cloned["checks"]:
+            if check["name"] == "contract.agentic_indexer":
+                check["status"] = "FAIL"
+                check["impact"] = "blocking"
+                check["summary"] = "agentic_indexer returned malformed contract JSON"
+                break
+    return _rebuild_health_issue_lists(cloned)
+
+
+def _simulated_verify_report(report: dict[str, object], *, status: str) -> dict[str, object]:
+    cloned = json.loads(json.dumps(report))
+    if status == "DEGRADED":
+        cloned["overall_status"] = "DEGRADED"
+        cloned["query_sanity"]["status"] = "WARNING"
+        cloned["query_sanity"]["impact"] = "non_blocking"
+        cloned["query_sanity"]["summary"] = "lightweight query succeeded but returned thin refinement signals"
+        cloned["non_blocking_issues"] = [cloned["query_sanity"]]
+        cloned["blocking_issues"] = []
         return cloned
-    cloned["overall_status"] = "FAIL"
-    for check in cloned["checks"]:
-        if check["name"] == "contract.agentic_indexer":
-            check["status"] = "FAIL"
-            check["summary"] = "agentic_indexer returned malformed contract JSON"
-            break
+    cloned["overall_status"] = "NOT_READY"
+    failure_issue = {
+        "name": "contract.agentic_indexer",
+        "category": "contract",
+        "subject": "agentic_indexer",
+        "status": "FAIL",
+        "impact": "blocking",
+        "summary": "agentic_indexer returned malformed contract JSON",
+        "capabilities": ["code_context", "pattern_discovery"],
+        "details": {},
+    }
+    cloned["blocking_issues"] = [failure_issue]
+    cloned["non_blocking_issues"] = []
+    cloned["health_overall_status"] = "FAIL"
     return cloned
+
+
+def _rebuild_health_issue_lists(report: dict[str, object]) -> dict[str, object]:
+    report["warnings"] = [check for check in report["checks"] if check["status"] == "WARNING"]
+    report["blocking_issues"] = [
+        check for check in report["checks"] if check["status"] == "FAIL" and check.get("impact") == "blocking"
+    ]
+    report["non_blocking_issues"] = [
+        check for check in report["checks"] if check["status"] in {"WARNING", "FAIL"} and check.get("impact") == "non_blocking"
+    ]
+    return report
+
+
+def _synthetic_thin_result_payload() -> dict[str, object]:
+    return {
+        "tool": "agentic_orchestrator",
+        "version": "v1",
+        "query": "how does this render",
+        "normalized_query": "how does this render",
+        "intent": {"route_mode": "task", "task_type": "render_ui"},
+        "results": [
+            {
+                "id": "synthetic-thin",
+                "type": "orchestrated_context",
+                "rank": 1,
+                "confidence": "medium",
+                "source": _runtime_source("orchestrator"),
+                "content": {
+                    "docs_results": [],
+                    "code_results": [{"id": "thin-code"}],
+                    "site_results": [],
+                    "debug_results": [],
+                    "key_signals": [],
+                    "suggested_next_steps": [],
+                    "result_thin": True,
+                    "missing_key_signals": ["code_anchor", "key_signals", "actionable_next_steps"],
+                    "refine_query_suggested": True,
+                    "refine_query_reason": "code context is thin for the current render/output query",
+                    "refine_query_hints": ["specify a symbol", "specify a file path", "specify the page type or workflow"],
+                    "summary": "Synthetic thin-result example for bundle review.",
+                },
+                "diagnostics": {
+                    "thin_result": True,
+                    "selected_tools": ["agentic_indexer"],
+                    "routing_reasons": ["synthetic example"],
+                    "tools_called": [],
+                    "notes": [],
+                    "selection_strategy": "rule_based_routing_plus_grouped_merge",
+                },
+            }
+        ],
+    }
 
 
 def _augment_summary(
@@ -464,6 +571,8 @@ def _augment_summary(
     *,
     warning_example_path: Path,
     failure_example_path: Path,
+    verify_example_path: Path,
+    thin_result_example_path: Path,
     pilot_trial_dir: Path,
     pilot_report_path: Path,
 ) -> str:
@@ -473,6 +582,8 @@ def _augment_summary(
         + "- Standardized bundle file naming toward underscore-separated artifacts such as `git_status.txt`, `git_commit.txt`, and `config_used.json`\n"
         + f"- Warning health example: `{warning_example_path.name}`\n"
         + f"- Failure health example: `{failure_example_path.name}`\n"
+        + f"- Verify/readiness example: `{verify_example_path.name}`\n"
+        + f"- Thin-result/refine-query example: `{thin_result_example_path.name}`\n"
         + "\n## Pilot Harness\n\n"
         + f"- Example pilot trial directory: `{pilot_trial_dir.name}`\n"
         + f"- Pilot report output: `{pilot_report_path.name}`\n"

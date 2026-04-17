@@ -102,15 +102,44 @@ def serializable_health_report(report: dict[str, Any]) -> dict[str, Any]:
         "generated_at": report["generated_at"],
         "deep": report["deep"],
         "thresholds": report["thresholds"],
+        "warnings": list(report["warnings"]),
+        "blocking_issues": list(report["blocking_issues"]),
+        "non_blocking_issues": list(report["non_blocking_issues"]),
+        "per_tool_status": report["per_tool_status"],
+        "per_resource_status": report["per_resource_status"],
+        "capability_status": report["capability_status"],
+        "usable_for": report["usable_for"],
+        "trusted_capabilities": list(report["trusted_capabilities"]),
         "checks": [
             {
                 "name": check["name"],
+                "category": check["category"],
+                "subject": check["subject"],
                 "status": check["status"],
+                "impact": check["impact"],
                 "summary": check["summary"],
+                "capabilities": list(check["capabilities"]),
                 "details": check["details"],
             }
             for check in report["checks"]
         ],
+        "notes": list(report["notes"]),
+    }
+
+
+def serializable_verify_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Return a JSON-stable subset of the runtime verify report."""
+
+    return {
+        "overall_status": report["overall_status"],
+        "generated_at": report["generated_at"],
+        "health_overall_status": report["health_overall_status"],
+        "query_sanity": report["query_sanity"],
+        "blocking_issues": list(report["blocking_issues"]),
+        "non_blocking_issues": list(report["non_blocking_issues"]),
+        "capability_status": report["capability_status"],
+        "usable_for": report["usable_for"],
+        "trusted_capabilities": list(report["trusted_capabilities"]),
         "notes": list(report["notes"]),
     }
 
@@ -153,9 +182,9 @@ def build_review_summary(
         "",
         "## Runtime Health / Drift",
         "",
-        "- Added a practical `health` command for local sibling-tool path checks, resource presence checks, recency drift warnings, and contract sanity checks",
-        "- Health statuses are explicit: `OK`, `WARNING`, `FAIL`",
-        "- `--deep` is available for optional routing/task baseline sanity checks",
+        "- Added a machine-friendly `health` command for local sibling-tool path checks, resource presence checks, recency drift warnings, contract sanity checks, and capability summaries",
+        "- Health statuses are explicit: `OK`, `WARNING`, `FAIL`, with blocking vs non-blocking issue classification",
+        "- Added `verify` as a single readiness check that wraps health plus one lightweight orchestrator query sanity check",
         "",
         "## Behavior Verification",
         "",
@@ -174,6 +203,11 @@ def build_review_summary(
         summary_lines.extend(["", "## Health Snapshot", ""])
         summary_lines.append(f"- Overall health: {health_report['overall_status']}")
         summary_lines.append(f"- Deep checks in bundle artifact: {'enabled' if health_report['deep'] else 'disabled'}")
+        summary_lines.append(f"- Trusted capabilities: {', '.join(health_report['trusted_capabilities']) or '(none)'}")
+        summary_lines.append(
+            "- Usable-for summary: "
+            + ", ".join(f"{name}={'yes' if usable else 'no'}" for name, usable in health_report["usable_for"].items())
+        )
         for check in health_report["checks"]:
             summary_lines.append(f"- `{check['name']}`: {check['status']} -> {check['summary']}")
     if task_weak_cases:

@@ -129,7 +129,7 @@ For a Codex-style worker or other AI assistant:
 2. Read [`AGENTS.md`](/Users/mattp/projects/agentic_orchestrator/AGENTS.md) for repo-specific commands and safety expectations.
 3. Use `config.local.toml` or `_smoke_test/live_config.toml` only if the local environment already has valid sibling-tool resources.
 4. Prefer deterministic tests (`python3 -m pytest`) before any live bundle run.
-5. Use `health` as a preflight before relying on live sibling-tool results.
+5. Use `verify` or `health --json` as a preflight before relying on live sibling-tool results.
 6. Keep changes thin: routing, assembly, evaluation, docs, or review-bundle behavior only when clearly within scope.
 
 ## What It Is
@@ -288,6 +288,8 @@ What you still need to do after the helper finishes:
 Use the health command as a conservative preflight check before real orchestrated work:
 
 ```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli verify --config ./config.local.toml
+PYTHONPATH=src python3 -m agentic_orchestrator.cli verify --config ./config.local.toml --json
 PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml
 PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml --json
 PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml --deep
@@ -303,6 +305,8 @@ What it checks:
   - sitemap run directory
 - conservative recency/drift checks using resource mtimes
 - lightweight runtime-contract sanity calls against each sibling tool
+- machine-friendly capability summaries such as `usable_for.docs_lookup` and `usable_for.code_context`
+- explicit blocking vs non-blocking issue classification
 - optional deep baseline checks for routing and task-eval summaries
 
 Health statuses:
@@ -310,6 +314,61 @@ Health statuses:
 - `OK`: the check passed and looks trustworthy
 - `WARNING`: the environment is usable but may be stale or drifting
 - `FAIL`: the local runtime is not trustworthy enough for normal orchestrated use
+
+Machine-facing health JSON includes:
+
+- `overall_status`
+- `checks`
+- `warnings`
+- `blocking_issues`
+- `non_blocking_issues`
+- `per_tool_status`
+- `per_resource_status`
+- `capability_status`
+- `usable_for`
+- `trusted_capabilities`
+- `notes`
+
+Capability semantics are conservative:
+
+- `usable_for.docs_lookup`: true only when devdocs command wiring, docs DB, and contract sanity are not blocking
+- `usable_for.code_context`: true only when indexer command wiring, index DB, and contract sanity are not blocking
+- `usable_for.site_navigation`: true only when sitemap command wiring, run directory, and contract sanity are not blocking
+- `usable_for.debug_investigation`: true only when `agentic_debug` is configured and healthy enough to use
+- `usable_for.pattern_discovery`: true when docs lookup and/or code context are available enough for exploratory retrieval
+
+Blocking vs non-blocking semantics:
+
+- blocking `FAIL`: the affected capability should not be trusted for normal use
+- non-blocking `WARNING`: degraded-but-usable, usually due to staleness or thinness
+- non-blocking `FAIL`: an optional capability, such as debug investigation, is unavailable without blocking the rest of the orchestrator
+
+## Verify / Ready Command
+
+Use `verify` when you want one fast answer to “is this orchestrator ready enough to use right now?”:
+
+```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli verify --config ./config.local.toml
+PYTHONPATH=src python3 -m agentic_orchestrator.cli verify --config ./config.local.toml --json
+```
+
+`verify` wraps:
+
+- config validation
+- runtime health/resource checks
+- one lightweight orchestrator query sanity check
+
+Verify statuses are:
+
+- `READY`: healthy enough for normal use
+- `DEGRADED`: usable, but with warnings or thin-result concerns
+- `NOT_READY`: blocking issues remain
+
+For Codex-style automation, prefer:
+
+1. `verify --json`
+2. inspect `usable_for` and `blocking_issues`
+3. only rely on capabilities currently reported as usable
 
 What it does not check:
 
@@ -551,6 +610,37 @@ Recent context-assembly improvements stayed small and explicit:
 - only require per-tool next steps when a tool result actually contains promotable evidence to turn into one
 - shape vague render/output code lookups into a narrow indexer-friendly concept query when docs evidence exposes output/template concepts
 - route concrete render/output symbol and file queries directly to `agentic_indexer` as bounded code anchors
+
+## Thin Result / Query Refinement Signals
+
+The orchestrator now adds small machine-friendly fields when a result is too weak to trust without refinement:
+
+- `result_thin`
+- `missing_key_signals`
+- `refine_query_suggested`
+- `refine_query_reason`
+- `refine_query_hints`
+
+These fields are deterministic and evidence-based. They do not add free-form planning. They only indicate that the current result is missing concrete signals such as:
+
+- a code anchor
+- site context
+- debug context
+- promoted key signals
+- actionable next steps
+
+Typical refine hints include:
+
+- specify a symbol
+- specify a file path
+- specify the page type or workflow
+- specify the failing PHPUnit selector
+- specify the CLI script path
+
+For automation, the intended pattern is:
+
+- if `result_thin` is `false`, the current bundle is probably actionable enough to inspect
+- if `result_thin` is `true`, check `refine_query_hints` and retry with a more specific query before over-trusting the result
 
 ## CLI
 

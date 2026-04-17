@@ -76,6 +76,16 @@ class OrchestratorService:
         notes = self._build_notes(decision, docs_payload, code_payload, site_payload, debug_payload, failures)
         summary = self._build_summary(docs_results, code_results, site_results, debug_results, assembly["key_signals"])
         next_steps = assembly["suggested_next_steps"]
+        thin_result = self._analyze_result_thinness(
+            decision=decision,
+            docs_results=docs_results,
+            code_results=code_results,
+            site_results=site_results,
+            debug_results=debug_results,
+            key_signals=assembly["key_signals"],
+            suggested_next_steps=next_steps,
+            code_payload=code_payload,
+        )
         intent = self._build_intent(decision)
         tools_called = [self._serialize_record(item) for item in records]
 
@@ -90,6 +100,11 @@ class OrchestratorService:
             tools_called=tools_called,
             suggested_next_steps=next_steps,
             summary=summary,
+            result_thin=thin_result["result_thin"],
+            missing_key_signals=thin_result["missing_key_signals"],
+            refine_query_suggested=thin_result["refine_query_suggested"],
+            refine_query_reason=thin_result["refine_query_reason"],
+            refine_query_hints=thin_result["refine_query_hints"],
             notes=notes + [f"tool_failure: {item['tool']} {item['mode']} {item['error']}" for item in failures],
         )
         diagnostics = payload["results"][0]["diagnostics"]
@@ -103,6 +118,7 @@ class OrchestratorService:
         diagnostics["debug_route_kind"] = decision.task_type if decision.debug_intent else None
         diagnostics["debug_intent"] = decision.debug_intent
         diagnostics["debug_execution_mode"] = decision.debug_execution_mode
+        diagnostics["thin_result"] = thin_result["result_thin"]
         if code_payload is not None:
             diagnostics["code_signal_source"] = self._code_signal_source(code_payload)
         return payload
@@ -423,7 +439,10 @@ class OrchestratorService:
         }
 
     def _code_signal_source(self, code_payload: dict[str, Any]) -> str:
-        result = code_payload.get("results", [{}])[0]
+        results = code_payload.get("results", [])
+        if not results:
+            return "thin_bundle"
+        result = results[0]
         content = result.get("content", {})
         if result.get("source", {}).get("path"):
             return "source_path"
@@ -440,3 +459,74 @@ class OrchestratorService:
             "command": item.command,
             "workdir": item.workdir,
         }
+
+    def _analyze_result_thinness(
+        self,
+        *,
+        decision: RoutingDecision,
+        docs_results: list[dict[str, Any]],
+        code_results: list[dict[str, Any]],
+        site_results: list[dict[str, Any]],
+        debug_results: list[dict[str, Any]],
+        key_signals: list[dict[str, Any]],
+        suggested_next_steps: list[dict[str, Any]],
+        code_payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Flag when the assembled result is too thin to trust without refinement."""
+
+        selected_tools = {request.tool_name for request in decision.tools}
+        missing: list[str] = []
+        hints: list[str] = []
+
+        if "agentic_devdocs" in selected_tools and not docs_results:
+            missing.append("docs_results")
+        if "agentic_indexer" in selected_tools:
+            if not code_results:
+                missing.append("code_results")
+                hints.extend(["specify a symbol", "specify a file path"])
+            elif code_payload is not None and self._code_signal_source(code_payload) == "thin_bundle":
+                missing.append("code_anchor")
+                hints.extend(["specify a symbol", "specify a file path"])
+        if "agentic_sitemap" in selected_tools and not site_results:
+            missing.append("site_context")
+            hints.append("specify the page type or workflow")
+        if "agentic_debug" in selected_tools and not debug_results:
+            missing.append("debug_context")
+        if "agentic_debug" in selected_tools:
+            if decision.debug_intent in {"plan_phpunit", "execute_phpunit"}:
+                hints.append("specify the failing PHPUnit selector")
+            elif decision.debug_intent in {"plan_cli", "execute_cli"}:
+                hints.append("specify the CLI script path")
+            elif decision.debug_intent in {"interpret_session", "get_session"}:
+                hints.append("specify the debug session id")
+
+        if not key_signals:
+            missing.append("key_signals")
+        if not suggested_next_steps:
+            missing.append("actionable_next_steps")
+
+        missing = list(dict.fromkeys(missing))
+        refine_hints = list(dict.fromkeys(hints))
+        result_thin = bool(missing)
+        return {
+            "result_thin": result_thin,
+            "missing_key_signals": missing,
+            "refine_query_suggested": bool(refine_hints),
+            "refine_query_reason": self._refine_query_reason(missing, decision=decision),
+            "refine_query_hints": refine_hints,
+        }
+
+    def _refine_query_reason(self, missing: list[str], *, decision: RoutingDecision) -> str | None:
+        if not missing:
+            return None
+        if "code_anchor" in missing or "code_results" in missing:
+            if decision.task_type == "render_ui":
+                return "code context is thin for the current render/output query"
+            return "code context is thin for the current query"
+        if "site_context" in missing:
+            return "site context is missing for the current query"
+        if "debug_context" in missing:
+            return "debug context is missing for the current query"
+        if "docs_results" in missing:
+            return "docs context is missing for the current query"
+        return "result is missing key signals and may need a more specific query"

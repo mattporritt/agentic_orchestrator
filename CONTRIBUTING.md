@@ -37,6 +37,7 @@ git status --short
 Useful live verification command:
 
 ```bash
+PYTHONPATH=src python3 -m agentic_orchestrator.cli verify --config ./config.local.toml
 PYTHONPATH=src python3 -m agentic_orchestrator.cli health --config ./config.local.toml
 PYTHONPATH=src python3 -m agentic_orchestrator.cli pilot-run "define a web service" --config ./config.local.toml --task-label web_service
 PYTHONPATH=src python3 -m agentic_orchestrator.review_bundle --config ./config.local.toml

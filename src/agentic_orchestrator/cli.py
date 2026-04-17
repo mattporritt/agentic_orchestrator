@@ -13,7 +13,12 @@ import sys
 
 from agentic_orchestrator.config import OrchestratorConfig, parse_context_json, parse_manual_tools
 from agentic_orchestrator.errors import OrchestratorError
-from agentic_orchestrator.health import collect_health_report, render_health_text
+from agentic_orchestrator.health import (
+    collect_health_report,
+    collect_verify_report,
+    render_health_text,
+    render_verify_text,
+)
 from agentic_orchestrator.installer import install_sibling_tools, render_install_report_text
 from agentic_orchestrator.orchestrator import OrchestratorService
 from agentic_orchestrator.pilot import (
@@ -44,6 +49,10 @@ def build_parser() -> argparse.ArgumentParser:
     health_parser.add_argument("--json", action="store_true", help="Emit structured JSON health output.")
     health_parser.add_argument("--deep", action="store_true", help="Also run deeper routing/task baseline sanity checks.")
     _add_common_config_args(health_parser)
+
+    verify_parser = subparsers.add_parser("verify", help="Check if the orchestrator is ready for real use right now.")
+    verify_parser.add_argument("--json", action="store_true", help="Emit structured JSON verify output.")
+    _add_common_config_args(verify_parser)
 
     install_parser = subparsers.add_parser(
         "install-siblings",
@@ -112,6 +121,13 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(report, indent=2, sort_keys=True))
                 return 0
             print(render_health_text(report), end="")
+            return 0
+        if args.command == "verify":
+            report = collect_verify_report(config)
+            if args.json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+                return 0
+            print(render_verify_text(report), end="")
             return 0
         if args.command == "install-siblings":
             report = install_sibling_tools(

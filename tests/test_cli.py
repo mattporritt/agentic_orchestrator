@@ -104,6 +104,14 @@ def test_cli_health_json_mode(monkeypatch, capsys) -> None:
             "overall_status": "OK",
             "generated_at": "2026-04-14T10:00:00+00:00",
             "deep": deep,
+            "warnings": [],
+            "blocking_issues": [],
+            "non_blocking_issues": [],
+            "per_tool_status": {},
+            "per_resource_status": {},
+            "capability_status": {"docs_lookup": "OK"},
+            "usable_for": {"docs_lookup": True},
+            "trusted_capabilities": ["docs_lookup"],
             "checks": [],
             "notes": [],
             "thresholds": {},
@@ -124,6 +132,14 @@ def test_cli_health_plain_mode(monkeypatch, capsys) -> None:
             "overall_status": "WARNING",
             "generated_at": "2026-04-14T10:00:00+00:00",
             "deep": deep,
+            "warnings": [{"name": "resource.indexer_db", "summary": "stale"}],
+            "blocking_issues": [],
+            "non_blocking_issues": [{"name": "resource.indexer_db", "summary": "stale"}],
+            "per_tool_status": {},
+            "per_resource_status": {},
+            "capability_status": {"docs_lookup": "OK"},
+            "usable_for": {"docs_lookup": True},
+            "trusted_capabilities": ["docs_lookup"],
             "checks": [{"name": "resource.indexer_db", "status": "WARNING", "summary": "stale", "details": {}}],
             "notes": ["warning note"],
             "thresholds": {},
@@ -135,6 +151,53 @@ def test_cli_health_plain_mode(monkeypatch, capsys) -> None:
     assert "Overall: WARNING" in output
     assert "Deep checks: enabled" in output
     assert "[WARNING] resource.indexer_db: stale" in output
+
+
+def test_cli_verify_json_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "collect_verify_report",
+        lambda config: {
+            "overall_status": "READY",
+            "generated_at": "2026-04-17T10:00:00+00:00",
+            "health_overall_status": "OK",
+            "query_sanity": {"status": "OK", "summary": "good"},
+            "blocking_issues": [],
+            "non_blocking_issues": [],
+            "trusted_capabilities": ["docs_lookup"],
+            "usable_for": {"docs_lookup": True},
+            "capability_status": {"docs_lookup": "OK"},
+            "notes": [],
+        },
+    )
+    rc = cli.main(["verify", "--json"])
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["overall_status"] == "READY"
+
+
+def test_cli_verify_plain_mode(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "collect_verify_report",
+        lambda config: {
+            "overall_status": "DEGRADED",
+            "generated_at": "2026-04-17T10:00:00+00:00",
+            "health_overall_status": "WARNING",
+            "query_sanity": {"status": "WARNING", "summary": "thin result"},
+            "blocking_issues": [],
+            "non_blocking_issues": [{"name": "resource.sitemap_run", "summary": "stale"}],
+            "trusted_capabilities": [],
+            "usable_for": {"docs_lookup": True},
+            "capability_status": {"docs_lookup": "OK"},
+            "notes": [],
+        },
+    )
+    rc = cli.main(["verify"])
+    assert rc == 0
+    output = capsys.readouterr().out
+    assert "Runtime Readiness" in output
+    assert "Overall: DEGRADED" in output
 
 
 def test_cli_install_siblings_json_mode(monkeypatch, capsys) -> None:

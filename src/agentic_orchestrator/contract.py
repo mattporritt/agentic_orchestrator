@@ -142,6 +142,11 @@ def build_orchestrator_envelope(
     tools_called: list[dict[str, Any]],
     suggested_next_steps: list[dict[str, Any]],
     summary: str,
+    result_thin: bool,
+    missing_key_signals: list[str],
+    refine_query_suggested: bool,
+    refine_query_reason: str | None,
+    refine_query_hints: list[str],
     notes: list[str],
 ) -> dict[str, Any]:
     """Build the orchestrator runtime-facing envelope."""
@@ -153,6 +158,11 @@ def build_orchestrator_envelope(
         "debug_results": debug_results,
         "key_signals": key_signals,
         "suggested_next_steps": suggested_next_steps,
+        "result_thin": result_thin,
+        "missing_key_signals": missing_key_signals,
+        "refine_query_suggested": refine_query_suggested,
+        "refine_query_reason": refine_query_reason,
+        "refine_query_hints": refine_query_hints,
         "summary": summary,
     }
     diagnostics = {

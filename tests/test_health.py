@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from agentic_orchestrator.config import OrchestratorConfig
-from agentic_orchestrator.health import collect_health_report, render_health_text
+from agentic_orchestrator.health import collect_health_report, collect_verify_report, render_health_text, render_verify_text
 
 
 def _tool_script(path: Path) -> str:
@@ -43,6 +43,9 @@ def _config(tmp_path: Path) -> OrchestratorConfig:
             sitemap_cmd=tool,
             sitemap_workdir=None,
             sitemap_extra_args=None,
+            debug_cmd=tool,
+            debug_workdir=None,
+            debug_extra_args=None,
             devdocs_db_path=str(docs_db),
             indexer_db_path=str(index_db),
             sitemap_run_dir=str(sitemap_run),
@@ -61,10 +64,115 @@ def _runner_for_contracts(*, args, text, capture_output, check, cwd=None, env=No
         query = args[args.index("--symbol") + 1]
     payload_tool = "agentic_sitemap"
     if subcommand == "query":
-        payload_tool = "agentic_docs"
         query = args[2]
+        payload = {
+            "tool": "agentic_docs",
+            "version": "v1",
+            "query": query,
+            "normalized_query": query.lower(),
+            "intent": {},
+            "results": [
+                {
+                    "id": "docs-1",
+                    "type": "knowledge_bundle",
+                    "rank": 1,
+                    "confidence": "high",
+                    "source": {
+                        "name": "docs",
+                        "type": "documentation",
+                        "url": None,
+                        "canonical_url": None,
+                        "path": "docs/admin/settings.md",
+                        "document_title": None,
+                        "section_title": None,
+                        "heading_path": [],
+                    },
+                    "content": {"summary": "Docs summary", "file_anchors": ["settings.php"]},
+                    "diagnostics": {},
+                }
+            ],
+        }
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
     elif command == "tool" and subcommand in {"build-context-bundle", "find-definition", "semantic-context"}:
-        payload_tool = "agentic_indexer"
+        payload = {
+            "tool": "agentic_indexer",
+            "version": "v1",
+            "query": query,
+            "normalized_query": query.lower(),
+            "intent": {},
+            "results": [
+                {
+                    "id": "code-1",
+                    "type": "context_bundle",
+                    "rank": 1,
+                    "confidence": "high",
+                    "source": {
+                        "name": "index",
+                        "type": "code_index",
+                        "url": None,
+                        "canonical_url": None,
+                        "path": "admin/tool/demo/settings.php",
+                        "document_title": None,
+                        "section_title": None,
+                        "heading_path": [],
+                    },
+                    "content": {"path": "admin/tool/demo/settings.php", "symbol": "tool_demo\\settings", "summary": "Code summary"},
+                    "diagnostics": {},
+                }
+            ],
+        }
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
+    elif subcommand == "health":
+        payload = {
+            "tool": "moodle_debug",
+            "version": "runtime-v1",
+            "query": {"input": []},
+            "normalized_query": {"intent": "health"},
+            "intent": "health",
+            "results": [
+                {
+                    "id": "health_report",
+                    "type": "health_report",
+                    "rank": 1,
+                    "confidence": "medium",
+                    "source": {"kind": "runtime", "profile_name": None, "session_id": None},
+                    "content": {"subsystems": [{"name": "config", "status": "ok", "message": "healthy"}]},
+                    "diagnostics": [],
+                }
+            ],
+            "diagnostics": [],
+            "meta": {"status": "ok", "generated_at": "2026-04-17T00:00:00+00:00", "repo_root": "/tmp/debug", "dry_run": True, "exit_code": 0},
+        }
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
+    elif subcommand == "runtime-query":
+        payload = {
+            "tool": "agentic_sitemap",
+            "version": "v1",
+            "query": query,
+            "normalized_query": query.lower(),
+            "intent": {},
+            "results": [
+                {
+                    "id": "site-1",
+                    "type": "page_context",
+                    "rank": 1,
+                    "confidence": "medium",
+                    "source": {
+                        "name": "site",
+                        "type": "site_manifest",
+                        "url": None,
+                        "canonical_url": None,
+                        "path": "/course/view.php",
+                        "document_title": None,
+                        "section_title": None,
+                        "heading_path": [],
+                    },
+                    "content": {"page_type": "dashboard", "summary": "Site summary"},
+                    "diagnostics": {},
+                }
+            ],
+        }
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=json.dumps(payload), stderr="")
     payload = {
         "tool": payload_tool,
         "version": "v1",
@@ -88,14 +196,17 @@ def test_collect_health_report_marks_missing_tool_as_fail(tmp_path: Path) -> Non
             indexer_cmd=config.indexer.command[0],
             indexer_workdir=None,
             indexer_extra_args=None,
-            sitemap_cmd=config.sitemap.command[0],
-            sitemap_workdir=None,
-            sitemap_extra_args=None,
-            devdocs_db_path=config.devdocs_db_path,
-            indexer_db_path=config.indexer_db_path,
-            sitemap_run_dir=config.sitemap_run_dir,
+                sitemap_cmd=config.sitemap.command[0],
+                sitemap_workdir=None,
+                sitemap_extra_args=None,
+                debug_cmd=config.debug.command[0],
+                debug_workdir=None,
+                debug_extra_args=None,
+                devdocs_db_path=config.devdocs_db_path,
+                indexer_db_path=config.indexer_db_path,
+                sitemap_run_dir=config.sitemap_run_dir,
+            )
         )
-    )
     report = collect_health_report(broken_config, runner=_runner_for_contracts)
     checks = {check["name"]: check for check in report["checks"]}
     assert report["overall_status"] == "FAIL"
@@ -117,6 +228,9 @@ def test_collect_health_report_marks_missing_resource_as_fail(tmp_path: Path) ->
                 sitemap_cmd=config.sitemap.command[0],
                 sitemap_workdir=None,
                 sitemap_extra_args=None,
+                debug_cmd=config.debug.command[0],
+                debug_workdir=None,
+                debug_extra_args=None,
                 devdocs_db_path=None,
                 indexer_db_path=config.indexer_db_path,
                 sitemap_run_dir=config.sitemap_run_dir,
@@ -146,6 +260,9 @@ def test_collect_health_report_returns_ok_for_healthy_configuration(tmp_path: Pa
     assert report["overall_status"] == "OK"
     assert checks["tool.agentic_devdocs"]["status"] == "OK"
     assert checks["contract.agentic_indexer"]["status"] == "OK"
+    assert report["usable_for"]["docs_lookup"] is True
+    assert report["capability_status"]["pattern_discovery"] == "OK"
+    assert "docs_lookup" in report["trusted_capabilities"]
 
 
 def test_collect_health_report_marks_contract_failure_as_fail(tmp_path: Path) -> None:
@@ -181,6 +298,11 @@ def test_render_health_text_includes_summary_and_notes() -> None:
             "overall_status": "WARNING",
             "generated_at": "2026-04-14T10:00:00+00:00",
             "deep": False,
+            "usable_for": {"docs_lookup": True},
+            "capability_status": {"docs_lookup": "WARNING"},
+            "trusted_capabilities": [],
+            "blocking_issues": [],
+            "non_blocking_issues": [{"name": "resource.indexer_db", "summary": "stale"}],
             "checks": [
                 {"name": "tool.agentic_devdocs", "status": "OK", "summary": "ready", "details": {}},
                 {"name": "resource.indexer_db", "status": "WARNING", "summary": "stale", "details": {}},
@@ -189,6 +311,8 @@ def test_render_health_text_includes_summary_and_notes() -> None:
         }
     )
     assert "Overall: WARNING" in text
+    assert "Usable For:" in text
+    assert "Non-blocking issues:" in text
     assert "[WARNING] resource.indexer_db: stale" in text
     assert "- example note" in text
 
@@ -209,3 +333,92 @@ def test_collect_health_report_surfaces_mixed_ok_warning_fail_statuses(tmp_path:
     statuses = {checks["tool.agentic_devdocs"]["status"], checks["resource.devdocs_db"]["status"], checks["contract.agentic_sitemap"]["status"]}
     assert report["overall_status"] == "FAIL"
     assert statuses == {"OK", "WARNING", "FAIL"}
+    assert report["blocking_issues"]
+    assert report["non_blocking_issues"]
+
+
+def test_collect_health_report_marks_debug_missing_as_non_blocking(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    report = collect_health_report(
+        OrchestratorConfig.from_args(
+            Namespace(
+                config=None,
+                devdocs_cmd=config.devdocs.command[0],
+                devdocs_workdir=None,
+                devdocs_extra_args=None,
+                indexer_cmd=config.indexer.command[0],
+                indexer_workdir=None,
+                indexer_extra_args=None,
+                sitemap_cmd=config.sitemap.command[0],
+                sitemap_workdir=None,
+                sitemap_extra_args=None,
+                debug_cmd=None,
+                debug_workdir=None,
+                debug_extra_args=None,
+                devdocs_db_path=config.devdocs_db_path,
+                indexer_db_path=config.indexer_db_path,
+                sitemap_run_dir=config.sitemap_run_dir,
+            )
+        ),
+        runner=_runner_for_contracts,
+    )
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["overall_status"] == "WARNING"
+    assert checks["tool.agentic_debug"]["status"] == "FAIL"
+    assert checks["tool.agentic_debug"]["impact"] == "non_blocking"
+    assert report["usable_for"]["debug_investigation"] is False
+
+
+def test_collect_verify_report_returns_ready_for_healthy_configuration(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    report = collect_verify_report(config, runner=_runner_for_contracts)
+    assert report["overall_status"] == "READY"
+    assert report["query_sanity"]["status"] == "OK"
+    assert report["usable_for"]["code_context"] is True
+
+
+def test_collect_verify_report_returns_not_ready_when_code_capability_is_blocked(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    report = collect_verify_report(
+        OrchestratorConfig.from_args(
+            Namespace(
+                config=None,
+                devdocs_cmd=config.devdocs.command[0],
+                devdocs_workdir=None,
+                devdocs_extra_args=None,
+                indexer_cmd=config.indexer.command[0],
+                indexer_workdir=None,
+                indexer_extra_args=None,
+                sitemap_cmd=config.sitemap.command[0],
+                sitemap_workdir=None,
+                sitemap_extra_args=None,
+                debug_cmd=config.debug.command[0],
+                debug_workdir=None,
+                debug_extra_args=None,
+                devdocs_db_path=config.devdocs_db_path,
+                indexer_db_path=None,
+                sitemap_run_dir=config.sitemap_run_dir,
+            )
+        ),
+        runner=_runner_for_contracts,
+    )
+    assert report["overall_status"] == "NOT_READY"
+    assert report["blocking_issues"]
+    assert report["query_sanity"]["status"] == "FAIL"
+
+
+def test_render_verify_text_includes_summary(tmp_path: Path) -> None:
+    text = render_verify_text(
+        {
+            "overall_status": "DEGRADED",
+            "generated_at": "2026-04-17T10:00:00+00:00",
+            "health_overall_status": "WARNING",
+            "query_sanity": {"status": "WARNING", "summary": "thin result"},
+            "blocking_issues": [],
+            "non_blocking_issues": [{"name": "resource.sitemap_run", "summary": "stale"}],
+            "usable_for": {"docs_lookup": True},
+            "capability_status": {"docs_lookup": "OK"},
+        }
+    )
+    assert "Overall: DEGRADED" in text
+    assert "Query sanity: WARNING -> thin result" in text
