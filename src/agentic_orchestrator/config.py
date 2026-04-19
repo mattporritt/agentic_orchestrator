@@ -137,10 +137,12 @@ class OrchestratorConfig:
                 os.getenv("AGENTIC_ORCHESTRATOR_INDEXER_DB"),
                 resources.get("indexer_db_path"),
             ),
-            sitemap_run_dir=_first_value(
-                getattr(args, "sitemap_run_dir", None),
-                os.getenv("AGENTIC_ORCHESTRATOR_SITEMAP_RUN_DIR"),
-                resources.get("sitemap_run_dir"),
+            sitemap_run_dir=_resolve_sitemap_run_dir(
+                _first_value(
+                    getattr(args, "sitemap_run_dir", None),
+                    os.getenv("AGENTIC_ORCHESTRATOR_SITEMAP_RUN_DIR"),
+                    resources.get("sitemap_run_dir"),
+                )
             ),
             config_path=config_path,
         )
@@ -188,6 +190,31 @@ class OrchestratorConfig:
                 }
             )
         return report
+
+
+def _resolve_sitemap_run_dir(path: str | None) -> str | None:
+    """Resolve sitemap_run_dir to a concrete run directory.
+
+    Accepts either a direct run directory (containing sitemap.json) or a
+    parent discovery-runs directory, in which case the latest subdirectory
+    that contains a sitemap.json is selected by lexicographic sort (ISO
+    timestamp names sort correctly).
+    """
+    if path is None:
+        return None
+    resolved = Path(path).expanduser()
+    if not resolved.exists():
+        return path
+    if (resolved / "sitemap.json").exists():
+        return str(resolved)
+    candidates = sorted(
+        (d for d in resolved.iterdir() if d.is_dir()),
+        reverse=True,
+    )
+    for candidate in candidates:
+        if (candidate / "sitemap.json").exists():
+            return str(candidate)
+    return path
 
 
 def _first_value(*values: Any) -> Any:
